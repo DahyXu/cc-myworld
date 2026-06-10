@@ -61,6 +61,22 @@ for (const k of ['0,0', '1,0', '0,1']) {
   assert.ok(Buffer.from(wa.chunks.get(k).data).equals(Buffer.from(wb.chunks.get(k).data)), 'order independent: ' + k);
 }
 
+// 负坐标：区块定位/读写往返、跨界 dirty、顺序无关性
+const wn = W.create(555);
+wn.ensureChunk(-1, -3);
+wn.setBlock(-5, 30, -37, 8); // cx=-1, cz=-3, lx=11, lz=11
+assert.strictEqual(wn.getBlock(-5, 30, -37), 8, 'negative coord roundtrip');
+wn.ensureChunk(-2, -3);
+wn.getChunk(-2, -3).dirty = false;
+wn.setBlock(-16, 30, -37, 8); // lx=0 西边界 → 邻块 (-2,-3) 标脏
+assert.strictEqual(wn.getChunk(-2, -3).dirty, true, 'negative border neighbor dirty');
+const wna = W.create(888), wnb = W.create(888);
+wna.ensureChunk(-1, -1); wna.ensureChunk(0, -1); wna.ensureChunk(-1, 0);
+wnb.ensureChunk(-1, 0); wnb.ensureChunk(-1, -1); wnb.ensureChunk(0, -1);
+for (const k of ['-1,-1', '0,-1', '-1,0']) {
+  assert.ok(Buffer.from(wna.chunks.get(k).data).equals(Buffer.from(wnb.chunks.get(k).data)), 'negative order independent: ' + k);
+}
+
 // 至少能找到树（多扫几个区块，找原木 id=4）
 const wt = W.create(2024);
 let foundLog = false;
