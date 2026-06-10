@@ -39,7 +39,7 @@
       const u = fade(xf), v = fade(yf);
       const aa = perm[perm[X] + Y], ab = perm[perm[X] + Y + 1];
       const ba = perm[perm[X + 1] + Y], bb = perm[perm[X + 1] + Y + 1];
-      // 梯度 (±1,±1) 模长 √2，2D 柏林理论值域恰为 ±1，无需缩放
+      // 混合梯度表（对角模√2、轴向模1）理论极值 ±1（四角对角梯度同时指向中心时取得），无需缩放
       return lerp(
         lerp(grad(aa, xf, yf), grad(ba, xf - 1, yf), u),
         lerp(grad(ab, xf, yf - 1), grad(bb, xf - 1, yf - 1), u),
