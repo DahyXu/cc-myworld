@@ -18,14 +18,14 @@ assert.ok(diff, 'different seeds must differ');
 // 值域大致在 [-1,1]
 for (let i = 0; i < 500; i++) {
   const v = a.perlin2(i * 0.913, i * 1.531);
-  assert.ok(v >= -1.05 && v <= 1.05, 'perlin2 out of range: ' + v);
+  assert.ok(v >= -1.001 && v <= 1.001, 'perlin2 out of range: ' + v);
 }
 // 非整点应有非零值（整点恰好为 0 是柏林噪声特性）
 assert.notStrictEqual(a.perlin2(0.5, 0.5), 0);
 // fbm2 值域与确定性
 for (let i = 0; i < 200; i++) {
   const v = a.fbm2(i * 0.37, i * 0.61, 4, 2, 0.5);
-  assert.ok(v >= -1.05 && v <= 1.05, 'fbm2 out of range: ' + v);
+  assert.ok(v >= -1.001 && v <= 1.001, 'fbm2 out of range: ' + v);
 }
 assert.strictEqual(a.fbm2(3.3, 4.4, 4, 2, 0.5), b.fbm2(3.3, 4.4, 4, 2, 0.5));
 console.log('test_noise OK');

@@ -39,12 +39,12 @@
       const u = fade(xf), v = fade(yf);
       const aa = perm[perm[X] + Y], ab = perm[perm[X] + Y + 1];
       const ba = perm[perm[X + 1] + Y], bb = perm[perm[X + 1] + Y + 1];
-      // 振幅归一化：二维柏林理论极值 ±sqrt(2)/2
+      // 梯度 (±1,±1) 模长 √2，2D 柏林理论值域恰为 ±1，无需缩放
       return lerp(
         lerp(grad(aa, xf, yf), grad(ba, xf - 1, yf), u),
         lerp(grad(ab, xf, yf - 1), grad(bb, xf - 1, yf - 1), u),
         v
-      ) * 1.41421356;
+      );
     }
 
     function fbm2(x, y, octaves, lacunarity, gain) {
