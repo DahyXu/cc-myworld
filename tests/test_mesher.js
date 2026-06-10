@@ -60,6 +60,20 @@ for (let f = 0; f < 6; f++) {
   }
 }
 
+// 三角形绕向锁定：每个三角形从面外侧看必须逆时针（叉积与法线同向）
+{
+  const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const at = (arr, i) => [arr[i * 3], arr[i * 3 + 1], arr[i * 3 + 2]];
+  for (let t = 0; t < g1.indices.length; t += 3) {
+    const [i0, i1, i2] = [g1.indices[t], g1.indices[t + 1], g1.indices[t + 2]];
+    const n = at(g1.normals, i0);
+    const c = cross(sub(at(g1.positions, i1), at(g1.positions, i0)), sub(at(g1.positions, i2), at(g1.positions, i0)));
+    assert.ok(dot(c, n) > 0, 'triangle ' + t / 3 + ' must wind CCW from outside');
+  }
+}
+
 // 真实世界冒烟测试：生成一个区块能构出网格且不抛异常
 const W = globalThis.MyWorld.World;
 const w = W.create(99);
