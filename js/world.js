@@ -19,7 +19,7 @@
 
   function create(seed) {
     const noise = Noise.create(seed);
-    const chunks = new Map();
+    const chunks = new Map(); // 方块数据永不淘汰（有意设计：保留玩家修改，仅卸载远处网格）
     const pending = new Map(); // key -> [{lx,ly,lz,id,onlyAir}]
 
     function terrainHeight(x, z) {
