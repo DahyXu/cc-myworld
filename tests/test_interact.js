@@ -45,4 +45,14 @@ const one = { getBlock: (x, y, z) => (x === 0 && y === 0 && z === 0 ? 3 : 0) };
   const r = Raycast.cast(empty, 0, 0, 0, 0, 0, -1, 6);
   assert.strictEqual(r.hit, false);
 }
+// 7) 角穿越（两轴 tMax 相等）确定性命中，返回单一面法线
+{
+  const diag = { getBlock: (x, y, z) => (x === 2 && y === 2 && z === 0 ? 3 : 0) };
+  const d = Math.SQRT1_2;
+  const r = Raycast.cast(diag, 0, 0, 0.5, d, d, 0, 10);
+  assert.strictEqual(r.hit, true);
+  assert.deepStrictEqual([r.x, r.y, r.z], [2, 2, 0]);
+  // 恰好一个法线分量非零
+  assert.strictEqual(Math.abs(r.nx) + Math.abs(r.ny) + Math.abs(r.nz), 1, 'single-axis face on corner');
+}
 console.log('test_interact OK');

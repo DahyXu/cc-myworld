@@ -3,6 +3,7 @@
   'use strict';
   const Blocks = root.MyWorld.Blocks;
 
+  // 注意: (dx,dy,dz) 必须是单位向量；maxDist 以世界格为单位
   function cast(world, ox, oy, oz, dx, dy, dz, maxDist) {
     let x = Math.floor(ox), y = Math.floor(oy), z = Math.floor(oz);
     const stepX = dx > 0 ? 1 : -1, stepY = dy > 0 ? 1 : -1, stepZ = dz > 0 ? 1 : -1;
