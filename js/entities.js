@@ -80,7 +80,8 @@
     if (!p) return;
     scene.remove(p.group);
     p.group.traverse((o) => {
-      if (o.geometry) o.geometry.dispose();
+      // 只销毁 Mesh 的独享几何体；Sprite.geometry 是 three 全局共享单例，销毁会引发 GPU 缓冲区反复重建
+      if (o.isMesh && o.geometry) o.geometry.dispose();
       if (o.material) {
         if (o.material.map) o.material.map.dispose();
         o.material.dispose();
