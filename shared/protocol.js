@@ -44,13 +44,13 @@
     return { ok: true, x: msg.x, y: msg.y, z: msg.z };
   }
 
-  // 昵称清洗：去控制字符（码点 <32 与 127）、trim、裁到 12 字；空则用 fallback
+  // 昵称清洗：去控制字符（码点 <32、127 与 128~159）、trim、裁到 12 字；空则用 fallback
   function sanitizeName(name, fallback) {
     const raw = String(name == null ? '' : name);
     let s = '';
     for (const ch of raw) {
       const c = ch.charCodeAt(0);
-      if (c >= 32 && c !== 127) s += ch;
+      if (c >= 32 && c !== 127 && (c < 128 || c > 159)) s += ch;
     }
     s = s.trim().slice(0, 12);
     return s.length > 0 ? s : fallback;

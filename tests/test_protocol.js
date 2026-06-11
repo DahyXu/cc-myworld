@@ -39,6 +39,7 @@ assert.strictEqual(P.sanitizeName('  小明  ', '甲'), '小明');
 assert.strictEqual(P.sanitizeName('', '甲'), '甲');
 assert.strictEqual(P.sanitizeName(null, '甲'), '甲');
 assert.strictEqual(P.sanitizeName('a' + String.fromCharCode(0) + 'b' + String.fromCharCode(31) + 'c', '甲'), 'abc', '剥离控制字符');
+assert.strictEqual(P.sanitizeName('a' + String.fromCharCode(133) + 'b', '甲'), 'ab', '剥离 C1 控制字符');
 assert.strictEqual(P.sanitizeName('张 三', '甲'), '张 三', '内部空格保留');
 assert.strictEqual(P.sanitizeName('一二三四五六七八九十拾壹拾贰', '甲').length, 12, '裁到 12 字');
 
