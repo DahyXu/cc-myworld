@@ -51,6 +51,8 @@
     const old = meshes.get(k);
     if (old) { scene.remove(old); old.geometry.dispose(); meshes.delete(k); }
     const d = Mesher.buildChunkGeometryData(world, cx, cz);
+    // 空几何不入 meshes 表：依赖「地形生成保证每区块必有实心方块」（terrainHeight 下限 2）。
+    // 若未来生成器可能产出全空区块，需改用空网格占位，否则该区块会每帧重进生成队列且后续编辑不触发重建
     if (d.positions.length === 0) return;
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(d.positions, 3));
@@ -91,7 +93,8 @@
     }
     for (const [k, m] of meshes) {
       const c = world.chunks.get(k);
-      if (Math.max(Math.abs(c.cx - pcx), Math.abs(c.cz - pcz)) > UNLOAD_RADIUS) {
+      // 区块缺失（理论上不发生）按孤儿网格卸载，避免渲染循环抛错
+      if (!c || Math.max(Math.abs(c.cx - pcx), Math.abs(c.cz - pcz)) > UNLOAD_RADIUS) {
         scene.remove(m);
         m.geometry.dispose();
         meshes.delete(k);
