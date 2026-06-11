@@ -165,7 +165,18 @@
       return c;
     }
 
-    return { seed, chunks, getChunk, ensureChunk, getBlock, setBlock, terrainHeight, key };
+    // 远端编辑：区块已存在→直写+标脏（走 setBlock）；未生成→寄存 pending
+    // （生成流程末尾会套用 pending，onlyAir:false 保证覆盖地形与树）
+    function applyRemoteEdit(x, y, z, id) {
+      if (y < 0 || y >= CHUNK_Y) return;
+      const cx = Math.floor(x / CHUNK_X), cz = Math.floor(z / CHUNK_Z);
+      if (chunks.has(key(cx, cz))) { setBlock(x, y, z, id); return; }
+      const k = key(cx, cz);
+      if (!pending.has(k)) pending.set(k, []);
+      pending.get(k).push({ lx: x - cx * CHUNK_X, ly: y, lz: z - cz * CHUNK_Z, id, onlyAir: false });
+    }
+
+    return { seed, chunks, getChunk, ensureChunk, getBlock, setBlock, applyRemoteEdit, terrainHeight, key };
   }
 
   root.MyWorld = root.MyWorld || {};
