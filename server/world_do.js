@@ -124,8 +124,9 @@ export class WorldDO {
   onMove(ws, s, msg) {
     const now = Date.now();
     const r = P.clampMove(s, msg, now - s.lastMoveMs);
-    s.lastMoveMs = now;
+    // 拒绝时不推进 lastMoveMs：让 dt 从上次采纳累积，避免追赶包被连环误拒
     if (!r.ok) { this.send(ws, { t: 'teleport', x: s.x, y: s.y, z: s.z }); return; }
+    s.lastMoveMs = now;
     s.x = r.x; s.y = r.y; s.z = r.z;
     if (isFinite(msg.yaw)) s.yaw = msg.yaw;
     if (isFinite(msg.pitch)) s.pitch = msg.pitch;
