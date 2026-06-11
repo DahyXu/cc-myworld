@@ -44,10 +44,15 @@
     return { ok: true, x: msg.x, y: msg.y, z: msg.z };
   }
 
-  // 昵称清洗：去控制字符、trim、裁到 12 字；空则用 fallback
+  // 昵称清洗：去控制字符（码点 <32 与 127）、trim、裁到 12 字；空则用 fallback
   function sanitizeName(name, fallback) {
-    const s = String(name == null ? '' : name)
-      .replace(/[\x20-]/g, '').trim().slice(0, 12);
+    const raw = String(name == null ? '' : name);
+    let s = '';
+    for (const ch of raw) {
+      const c = ch.charCodeAt(0);
+      if (c >= 32 && c !== 127) s += ch;
+    }
+    s = s.trim().slice(0, 12);
     return s.length > 0 ? s : fallback;
   }
 
