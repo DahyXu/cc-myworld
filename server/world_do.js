@@ -98,7 +98,6 @@ export class WorldDO {
       token, name, x, y, z, now);
     const s = { pid: this.nextPid++, token, name, x, y, z, yaw: 0, pitch: 0, lastMoveMs: now, visible: new Set() };
     this.sessions.set(ws, s);
-    ws.serializeAttachment({ token });
     // 欢迎包：种子 + 全量方块 diff + 兴趣半径内在线玩家
     const edits = [];
     for (const [k, id] of this.edits) {
