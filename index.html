@@ -33,7 +33,12 @@
     position: absolute; left: 3px; top: 1px; color: #fff;
     font: 11px/1 sans-serif; text-shadow: 1px 1px 0 #000;
   }
-  /* 开始/暂停遮罩 */
+  /* 在线人数 */
+  #online {
+    position: fixed; right: 10px; top: 8px; z-index: 10; color: #fff;
+    font: 13px sans-serif; text-shadow: 1px 1px 0 #000; pointer-events: none;
+  }
+  /* 开始/暂停/连接遮罩 */
   #overlay {
     position: fixed; inset: 0; z-index: 20; display: flex;
     align-items: center; justify-content: center;
@@ -47,6 +52,15 @@
   #overlay h1 { margin: 0 0 14px; font-size: 26px; color: #7ec850; }
   #overlay p { margin: 6px 0; font-size: 14px; line-height: 1.7; }
   #overlay .go { margin-top: 16px; font-size: 16px; color: #ffd24a; }
+  #ovName input {
+    font: 16px sans-serif; padding: 6px 10px; border-radius: 4px;
+    border: 1px solid #666; background: #222; color: #eee; width: 180px; text-align: center;
+  }
+  #ovName button {
+    font: 15px sans-serif; margin-left: 8px; padding: 7px 16px; border-radius: 4px;
+    border: 1px solid #7ec850; background: #2c4a1e; color: #cdf0b0; cursor: pointer;
+  }
+  #ovName button:hover { background: #3a6128; }
   kbd {
     background: #333; border: 1px solid #666; border-bottom-width: 2px;
     border-radius: 3px; padding: 1px 6px; font-size: 12px;
@@ -62,24 +76,45 @@
 <body>
 <div id="crosshair"></div>
 <div id="hotbar"></div>
+<div id="online"></div>
 <div id="overlay">
   <div class="panel">
-    <h1>我的世界 · 网页版</h1>
-    <p><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 移动　<kbd>空格</kbd> 跳跃　鼠标转视角</p>
-    <p>左键挖方块　右键放方块</p>
-    <p><kbd>1</kbd>~<kbd>8</kbd> 或滚轮选择方块　<kbd>ESC</kbd> 暂停</p>
-    <p class="go">点击任意处开始游戏</p>
+    <h1>我的世界 · 联机版</h1>
+    <div id="ovConnecting">
+      <p>正在连接服务器…</p>
+    </div>
+    <div id="ovName" style="display:none">
+      <p>给自己起个名字（最多 12 字）</p>
+      <p><input id="nameInput" maxlength="12" placeholder="昵称"><button id="nameBtn">进入世界</button></p>
+    </div>
+    <div id="ovStart" style="display:none">
+      <p><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 移动　<kbd>空格</kbd> 跳跃　鼠标转视角</p>
+      <p>左键挖方块　右键放方块</p>
+      <p><kbd>1</kbd>~<kbd>8</kbd> 或滚轮选择方块　<kbd>ESC</kbd> 暂停</p>
+      <p class="go">点击任意处开始游戏</p>
+    </div>
+    <div id="ovFile" style="display:none">
+      <p>联机模式无法用 file:// 直接打开。</p>
+      <p>请在项目目录运行 <kbd>npx wrangler dev</kbd><br>然后访问提示的本地地址。</p>
+    </div>
+    <div id="ovReplaced" style="display:none">
+      <p>这个世界已在另一个窗口打开。</p>
+      <p>同一浏览器共用一个身份：先关闭其他窗口，<br>再刷新本页继续游戏。</p>
+    </div>
   </div>
 </div>
 <div id="nogl">你的浏览器不支持 WebGL，无法运行游戏。请更换或升级浏览器。</div>
 <script src="lib/three.min.js"></script>
 <script src="js/noise.js"></script>
 <script src="js/blocks.js"></script>
+<script src="shared/protocol.js"></script>
 <script src="js/world.js"></script>
 <script src="js/mesher.js"></script>
 <script src="js/player.js"></script>
 <script src="js/interact.js"></script>
 <script src="js/ui.js"></script>
+<script src="js/net.js"></script>
+<script src="js/entities.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-// js/ui.js — 快捷栏与遮罩
+// js/ui.js — 快捷栏、遮罩模式与在线人数
 (function (root) {
   'use strict';
   const Blocks = root.MyWorld.Blocks;
@@ -38,6 +38,22 @@
     root.document.getElementById('overlay').style.display = show ? 'flex' : 'none';
   }
 
+  // 遮罩内容模式：connecting | name | start | file | replaced
+  let overlayMode = 'connecting';
+  function setOverlayMode(mode) {
+    overlayMode = mode;
+    const ids = { connecting: 'ovConnecting', name: 'ovName', start: 'ovStart', file: 'ovFile', replaced: 'ovReplaced' };
+    for (const k in ids) {
+      root.document.getElementById(ids[k]).style.display = (k === mode ? 'block' : 'none');
+    }
+    showOverlay(true);
+  }
+  function getOverlayMode() { return overlayMode; }
+
+  function setOnline(n) {
+    root.document.getElementById('online').textContent = '在线 ' + n;
+  }
+
   root.MyWorld = root.MyWorld || {};
-  root.MyWorld.UI = { buildHotbar, selectSlot, showOverlay };
+  root.MyWorld.UI = { buildHotbar, selectSlot, showOverlay, setOverlayMode, getOverlayMode, setOnline };
 })(typeof self !== 'undefined' ? self : globalThis);
