@@ -43,6 +43,24 @@ export class WorldDO {
       this.edits.set(r.x + ',' + r.y + ',' + r.z, r.id);
       this.world.applyRemoteEdit(r.x, r.y, r.z, r.id);
     }
+    // 休眠唤醒恢复：workerd 十几秒空闲即休眠 DO（连接保持打开），内存会话必须从
+    // attachment + players 表重建，否则唤醒消息会被 rehello 吞掉、互见状态丢失。
+    // 互见集置空即可：下一次 move 的 syncVisibility 会重新配对（客户端按 pid 去重）。
+    for (const ws of this.ctx.getWebSockets()) {
+      let a = null;
+      try { a = ws.deserializeAttachment(); } catch {}
+      if (!a || !a.token) continue;
+      const row = this.sql.exec(`SELECT * FROM players WHERE token = ?`, a.token).toArray()[0];
+      const s = {
+        pid: a.pid, token: a.token, name: a.name,
+        x: row ? row.x : SPAWN_X, y: row ? row.y : this.world.terrainHeight(8, 8) + 1, z: row ? row.z : SPAWN_Z,
+        yaw: 0, pitch: 0, lastMoveMs: Date.now(), visible: new Set(),
+      };
+      this.sessions.set(ws, s);
+      if (a.pid >= this.nextPid) this.nextPid = a.pid + 1;
+    }
+    // 唤醒后续上周期落盘（休眠时 alarm 链可能已断）
+    if (this.sessions.size > 0) this.ctx.storage.setAlarm(Date.now() + P.PERSIST_INTERVAL_MS);
   }
 
   async fetch(request) {
@@ -59,7 +77,7 @@ export class WorldDO {
     try { msg = JSON.parse(raw); } catch { return; }
     const s = this.sessions.get(ws);
     if (!s) {
-      // 未握手（含 DO 休眠唤醒后内存会话丢失）：只接受 hello，其余要求重新握手
+      // 无会话（attachment 恢复失败或从未握手）：只接受 hello，其余回 rehello 兜底
       if (msg.t === 'hello') this.onHello(ws, msg);
       else this.send(ws, { t: 'rehello' });
       return;
@@ -98,6 +116,8 @@ export class WorldDO {
       token, name, x, y, z, now);
     const s = { pid: this.nextPid++, token, name, x, y, z, yaw: 0, pitch: 0, lastMoveMs: now, visible: new Set() };
     this.sessions.set(ws, s);
+    // 休眠存活凭据：唤醒后 boot() 经 getWebSockets + attachment 恢复会话（pid 延续）
+    ws.serializeAttachment({ token: s.token, pid: s.pid, name: s.name });
     // 欢迎包：种子 + 全量方块 diff + 兴趣半径内在线玩家
     const edits = [];
     for (const [k, id] of this.edits) {
