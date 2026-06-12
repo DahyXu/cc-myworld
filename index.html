@@ -65,6 +65,36 @@
     background: #333; border: 1px solid #666; border-bottom-width: 2px;
     border-radius: 3px; padding: 1px 6px; font-size: 12px;
   }
+  /* 战斗 HUD */
+  #hud {
+    position: fixed; left: 12px; bottom: 12px; z-index: 10; pointer-events: none;
+    font-family: sans-serif;
+  }
+  #hpBar {
+    width: 220px; height: 18px; background: rgba(0,0,0,0.5);
+    border: 2px solid #888; border-radius: 4px; overflow: hidden; position: relative;
+  }
+  #hpFill { height: 100%; width: 100%; background: #d43b3b; transition: width 0.15s; }
+  #hpText {
+    position: absolute; inset: 0; color: #fff; font: bold 12px/18px sans-serif;
+    text-align: center; text-shadow: 1px 1px 0 #000;
+  }
+  #redflash {
+    position: fixed; inset: 0; z-index: 15; pointer-events: none; opacity: 0;
+    transition: opacity 0.25s; background: radial-gradient(ellipse at center, rgba(255,0,0,0) 55%, rgba(255,0,0,0.55) 100%);
+  }
+  #floaters { position: fixed; inset: 0; z-index: 12; pointer-events: none; overflow: hidden; }
+  .floater {
+    position: absolute; transform: translate(-50%, -100%);
+    font: bold 16px sans-serif; text-shadow: 1px 1px 0 #000; white-space: nowrap;
+  }
+  #deathOverlay {
+    position: fixed; inset: 0; z-index: 25; display: none;
+    align-items: center; justify-content: center; flex-direction: column;
+    background: rgba(40,0,0,0.75); color: #ff6b6b;
+    font: bold 42px sans-serif; text-shadow: 2px 2px 0 #000;
+  }
+  #deathOverlay small { font-size: 16px; color: #ddd; margin-top: 12px; }
   /* WebGL 不可用提示 */
   #nogl {
     position: fixed; inset: 0; z-index: 30; display: none;
@@ -77,6 +107,10 @@
 <div id="crosshair"></div>
 <div id="hotbar"></div>
 <div id="online"></div>
+<div id="hud"><div id="hpBar"><div id="hpFill"></div><div id="hpText">20 / 20</div></div></div>
+<div id="redflash"></div>
+<div id="floaters"></div>
+<div id="deathOverlay">你死了<small>3 秒后在出生点复活…</small></div>
 <div id="overlay">
   <div class="panel">
     <h1>我的世界 · 联机版</h1>
@@ -90,6 +124,7 @@
     <div id="ovStart" style="display:none">
       <p><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 移动　<kbd>空格</kbd> 跳跃　鼠标转视角</p>
       <p>左键挖方块　右键放方块</p>
+      <p><kbd>1</kbd> 剑　<kbd>2</kbd> 弓　对准怪物左键攻击</p>
       <p><kbd>1</kbd>~<kbd>8</kbd> 或滚轮选择方块　<kbd>ESC</kbd> 暂停</p>
       <p class="go">点击任意处开始游戏</p>
     </div>
@@ -108,13 +143,18 @@
 <script src="js/noise.js"></script>
 <script src="js/blocks.js"></script>
 <script src="shared/protocol.js"></script>
+<script src="shared/physics.js"></script>
+<script src="shared/stats.js"></script>
+<script src="shared/mobs_def.js"></script>
 <script src="js/world.js"></script>
 <script src="js/mesher.js"></script>
 <script src="js/player.js"></script>
 <script src="js/interact.js"></script>
+<script src="js/combat.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/net.js"></script>
 <script src="js/entities.js"></script>
+<script src="js/hud.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

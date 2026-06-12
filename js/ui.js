@@ -4,26 +4,32 @@
   const Blocks = root.MyWorld.Blocks;
   let slots = [];
 
-  function buildHotbar(atlasCanvas) {
+  // items: Combat.ITEMS（10 格：剑/弓/8 种方块）；数字标签 1~9,0
+  function buildHotbar(atlasCanvas, items) {
     const bar = root.document.getElementById('hotbar');
     bar.innerHTML = '';
     slots = [];
-    Blocks.HOTBAR.forEach((id, i) => {
+    items.forEach((item, i) => {
       const slot = root.document.createElement('div');
       slot.className = 'slot';
       const cv = root.document.createElement('canvas');
       cv.width = 32; cv.height = 32;
       const ctx = cv.getContext('2d');
       ctx.imageSmoothingEnabled = false;
-      const t = Blocks.BLOCKS[id].tex.side;
-      const sx = (t % Blocks.ATLAS_TILES) * Blocks.TILE_PX;
-      const sy = Math.floor(t / Blocks.ATLAS_TILES) * Blocks.TILE_PX;
-      ctx.drawImage(atlasCanvas, sx, sy, Blocks.TILE_PX, Blocks.TILE_PX, 0, 0, 32, 32);
+      if (item.kind === 'block') {
+        const t = Blocks.BLOCKS[item.id].tex.side;
+        const sx = (t % Blocks.ATLAS_TILES) * Blocks.TILE_PX;
+        const sy = Math.floor(t / Blocks.ATLAS_TILES) * Blocks.TILE_PX;
+        ctx.drawImage(atlasCanvas, sx, sy, Blocks.TILE_PX, Blocks.TILE_PX, 0, 0, 32, 32);
+        slot.title = Blocks.BLOCKS[item.id].name;
+      } else {
+        root.MyWorld.Combat.drawIcon(ctx, item.kind);
+        slot.title = item.name;
+      }
       const num = root.document.createElement('span');
-      num.textContent = i + 1;
+      num.textContent = (i + 1) % 10; // 第 10 格显示 0
       slot.appendChild(cv);
       slot.appendChild(num);
-      slot.title = Blocks.BLOCKS[id].name;
       bar.appendChild(slot);
       slots.push(slot);
     });
