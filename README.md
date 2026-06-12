@@ -7,10 +7,12 @@
 本地开发（需要 Node ≥ 22）：
 
 ```bash
-npx wrangler dev
+npx wrangler dev --persist-to ../cc-myworld-state
 ```
 
 然后访问提示的本地地址（默认 http://localhost:8787）。
+
+> `--persist-to` 必须指向**项目目录之外**：本项目把仓库根目录作为静态资产目录，而 wrangler 的文件监听不理会 `.assetsignore`——本地世界数据（SQLite）若写在项目内的 `.wrangler/` 下，会自我触发无限热重载。
 
 部署到 Cloudflare：
 
