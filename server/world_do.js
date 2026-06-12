@@ -218,6 +218,7 @@ export class WorldDO {
   onRespawn(ws, s) {
     s.x = SPAWN_X; s.z = SPAWN_Z;
     s.y = this.world.terrainHeight(8, 8) + 1;
+    s.lastMoveMs = Date.now(); // 位置已权威重置，限速时钟同步归零，避免长闲置攒出超大位移预算
     this.send(ws, { t: 'teleport', x: s.x, y: s.y, z: s.z });
     this.syncVisibility(ws, s);
   }
