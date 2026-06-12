@@ -53,17 +53,22 @@ assert.strictEqual(P.MELEE_RANGE, 3.5);
 assert.strictEqual(P.MELEE_CD_MS, 500);
 assert.strictEqual(P.BOW_CD_MS, 1000);
 assert.strictEqual(P.ARROW_SPEED, 30);
-assert.ok(P.ARROW_GRAVITY > 0);
+assert.strictEqual(P.ARROW_GRAVITY, 18); // 两端独立积分弹道，必须锁值
+assert.strictEqual(P.ARROW_LIFE_MS, 5000);
 assert.strictEqual(P.INVULN_MS, 500);
 assert.strictEqual(P.REGEN_DELAY_MS, 5000);
 assert.strictEqual(P.DEATH_RESPAWN_MS, 3000);
 assert.strictEqual(P.MOB_TICK_MS, 100);
 assert.strictEqual(P.CAMP_ACTIVE_CHUNKS, 5);
+assert.strictEqual(P.KNOCKBACK_H, 6);
+assert.strictEqual(P.KNOCKBACK_V, 3);
 
 // validAttack：id 必须是非空短字符串
 assert.ok(P.validAttack({ id: '3_4_0' }));
 assert.ok(!P.validAttack({ id: '' }));
 assert.ok(!P.validAttack({ id: 123 }));
+assert.ok(P.validAttack({ id: 'x'.repeat(24) }), '24 字上界放行');
+assert.ok(!P.validAttack({ id: 'x'.repeat(25) }), '25 字越界拒绝');
 assert.ok(!P.validAttack({ id: 'x'.repeat(40) }));
 assert.ok(!P.validAttack(null));
 
