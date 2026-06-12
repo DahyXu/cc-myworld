@@ -52,7 +52,8 @@
     const bot = box(0.05, 0.3, 0.05, 0x8a5a2b); bot.position.y = -0.18; bot.rotation.z = -0.4;
     heldBow.add(top, mid, bot);
     held.add(heldSword, heldBow);
-    held.position.set(0.35, -0.32, -0.55);
+    held.scale.set(0.45, 0.45, 0.45); // 近距视角下整体缩小，避免手持物占据过多视野
+    held.position.set(0.38, -0.3, -0.6);
     held.rotation.set(-0.2, 0.3, 0);
     camera.add(held);
     setHeld(0);
