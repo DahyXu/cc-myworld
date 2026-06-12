@@ -62,12 +62,16 @@ export class WorldDO {
       try { a = ws.deserializeAttachment(); } catch {}
       if (!a || !a.token) continue;
       const row = this.sql.exec(`SELECT * FROM players WHERE token = ?`, a.token).toArray()[0];
+      const lvl = row && row.level ? row.level : 1;
+      const mhp = Stats.maxHp(lvl);
       const s = {
         pid: a.pid, token: a.token, name: a.name,
         x: row ? row.x : SPAWN_X, y: row ? row.y : this.world.terrainHeight(8, 8) + 1, z: row ? row.z : SPAWN_Z,
         // 限速时钟取上次落盘时间：恢复的位置即彼时位置，位移预算 = 均速 × 实际经过时长；
         // 若取 Date.now()，唤醒 DO 的那条 move 自身 dt 会被压到 30ms 下限而被误拒拉回
         yaw: 0, pitch: 0, lastMoveMs: row && row.last_seen ? row.last_seen : Date.now() - 1000, visible: new Set(),
+        level: lvl, hp: row && isFinite(row.hp) && row.hp > 0 ? Math.min(row.hp, mhp) : mhp, maxHp: mhp,
+        dead: false, deadUntil: 0, invulnUntil: 0, lastHurtAt: 0, nextRegenAt: 0, atkReadyAt: 0, bowReadyAt: 0,
       };
       this.sessions.set(ws, s);
       if (a.pid >= this.nextPid) this.nextPid = a.pid + 1;
@@ -110,6 +114,8 @@ export class WorldDO {
     }
     if (msg.t === 'move') this.onMove(ws, s, msg);
     else if (msg.t === 'edit') this.onEdit(ws, s, msg);
+    else if (msg.t === 'attack') this.onAttack(ws, s, msg);
+    else if (msg.t === 'shoot') this.onShoot(ws, s, msg);
     else if (msg.t === 'respawn') this.onRespawn(ws, s);
     else if (msg.t === 'hello') this.onHello(ws, msg); // 重复 hello：按重新握手处理
   }
@@ -140,7 +146,11 @@ export class WorldDO {
       `INSERT INTO players (token, name, x, y, z, last_seen) VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(token) DO UPDATE SET name = excluded.name, last_seen = excluded.last_seen`,
       token, name, x, y, z, now);
-    const s = { pid: this.nextPid++, token, name, x, y, z, yaw: 0, pitch: 0, lastMoveMs: now, visible: new Set() };
+    const level = row && row.level ? row.level : 1;
+    const maxHp = Stats.maxHp(level);
+    const hp = row && isFinite(row.hp) && row.hp > 0 ? Math.min(row.hp, maxHp) : maxHp;
+    const s = { pid: this.nextPid++, token, name, x, y, z, yaw: 0, pitch: 0, lastMoveMs: now, visible: new Set(),
+      level, hp, maxHp, dead: false, deadUntil: 0, invulnUntil: 0, lastHurtAt: 0, nextRegenAt: 0, atkReadyAt: 0, bowReadyAt: 0 };
     this.sessions.set(ws, s);
     // 休眠存活凭据：唤醒后 boot() 经 getWebSockets + attachment 恢复会话（pid 延续）
     ws.serializeAttachment({ token: s.token, pid: s.pid, name: s.name });
@@ -164,7 +174,7 @@ export class WorldDO {
     for (const m of this.mobs.values()) {
       if (!m.dead && P.inInterest(m.x, m.z, s.x, s.z)) mobs.push(this.mobSpawnMsg(m));
     }
-    this.send(ws, { t: 'welcome', pid: s.pid, seed: this.seed, x: s.x, y: s.y, z: s.z, edits, players, online: this.sessions.size, hp: 20, maxHp: 20, mobs });
+    this.send(ws, { t: 'welcome', pid: s.pid, seed: this.seed, x: s.x, y: s.y, z: s.z, edits, players, online: this.sessions.size, hp: s.hp, maxHp: s.maxHp, mobs });
     this.broadcastOnline();
     this.ctx.storage.setAlarm(Date.now() + P.PERSIST_INTERVAL_MS);
     this.ensureTick();
@@ -172,6 +182,7 @@ export class WorldDO {
 
   // --- 移动：限速 + 互见集维护 ---
   onMove(ws, s, msg) {
+    if (s.dead) return;
     const now = Date.now();
     const r = P.clampMove(s, msg, now - s.lastMoveMs);
     // 拒绝时不推进 lastMoveMs：让 dt 从上次采纳累积，避免追赶包被连环误拒
@@ -440,11 +451,168 @@ export class WorldDO {
     }
   }
 
-  // Task 6 实现：先放空壳保证可运行
-  damagePlayer(victim, dmg, now) {}
-  spawnArrow(x, y, z, dx, dy, dz, ownerPid, dmg) {}
-  tickArrows(now) {}
-  tickPlayers(now) { return false; }
+  // ====== M2 战斗结算 ======
+
+  // 近战：服务器复核冷却与射程后结算（客户端预选目标只是意图）
+  onAttack(ws, s, msg) {
+    if (s.dead || !P.validAttack(msg)) return;
+    const now = Date.now();
+    if (now < s.atkReadyAt) return;
+    const mob = this.mobs.get(msg.id);
+    if (!mob || mob.dead) return;
+    const ex = s.x, ey = s.y + EYE, ez = s.z;
+    const d = Math.hypot(mob.x - ex, mob.y + mob.height / 2 - ey, mob.z - ez);
+    if (d > P.MELEE_RANGE + 1) return; // 位置上报滞后留 1 格余量
+    s.atkReadyAt = now + P.MELEE_CD_MS;
+    // 击退：水平远离攻击者 + 小幅上抛
+    const kx = mob.x - s.x, kz = mob.z - s.z;
+    const kl = Math.hypot(kx, kz) || 1;
+    mob.vx += kx / kl * P.KNOCKBACK_H; mob.vz += kz / kl * P.KNOCKBACK_H;
+    if (mob.onGround) mob.vy = P.KNOCKBACK_V;
+    this.hurtMob(mob, Stats.swordDamage(s.level), s, now);
+    this.ensureTick();
+  }
+
+  // 射箭：从玩家视点出发，方向归一化
+  onShoot(ws, s, msg) {
+    if (s.dead || !P.validShoot(msg)) return;
+    const now = Date.now();
+    if (now < s.bowReadyAt) return;
+    s.bowReadyAt = now + P.BOW_CD_MS;
+    const len = Math.hypot(msg.dx, msg.dy, msg.dz);
+    this.spawnArrow(s.x, s.y + EYE, s.z, msg.dx / len, msg.dy / len, msg.dz / len, s.pid, Stats.bowDamage(s.level));
+    this.ensureTick();
+  }
+
+  hurtMob(mob, dmg, attacker, now) {
+    if (mob.state === 'return') return; // 回巢途中无敌（防风筝逃课，spec 明确）
+    mob.hp -= dmg;
+    mob.aggroPid = attacker.pid; // 被动怪被打才反击
+    if (mob.state === 'idle') mob.state = 'chase';
+    if (mob.hp <= 0) {
+      mob.hp = 0; mob.dead = true;
+      mob.respawnAt = now + 30000; // 死后 30 秒原地重生
+      this.broadcastMob(mob, { t: 'mobDie', id: mob.id });
+      // M3 在此结算经验与任务计数（最后一击归属 attacker.pid）
+    } else {
+      this.broadcastMob(mob, { t: 'mobHurt', id: mob.id, hp: mob.hp, dmg });
+    }
+  }
+
+  // ownerPid>0 为玩家箭（只打怪），0 为怪物箭（只打玩家）
+  spawnArrow(x, y, z, dx, dy, dz, ownerPid, dmg) {
+    const len = Math.hypot(dx, dy, dz) || 1;
+    const a = {
+      id: 'a' + this.nextArrowId++, own: ownerPid, dmg,
+      x: x + dx / len * 0.6, y: y + dy / len * 0.6, z: z + dz / len * 0.6,
+      vx: dx / len * P.ARROW_SPEED, vy: dy / len * P.ARROW_SPEED, vz: dz / len * P.ARROW_SPEED,
+      dieAt: Date.now() + P.ARROW_LIFE_MS,
+    };
+    this.arrows.set(a.id, a);
+    // 广播给兴趣内玩家；玩家自己的箭不回发（客户端已本地预表现）
+    for (const [ws2, s2] of this.sessions) {
+      if (s2.pid === ownerPid) continue;
+      if (P.inInterest(a.x, a.z, s2.x, s2.z)) {
+        this.send(ws2, { t: 'arrowSpawn', id: a.id, x: a.x, y: a.y, z: a.z, vx: a.vx, vy: a.vy, vz: a.vz, own: ownerPid });
+      }
+    }
+    this.ensureTick();
+  }
+
+  // 逐 tick 积分弹道：线段查方块（DDA 太重，按 0.5 格采样）与实体 AABB
+  tickArrows(now) {
+    const dt = P.MOB_TICK_MS / 1000;
+    for (const [id, a] of Array.from(this.arrows)) {
+      const x0 = a.x, y0 = a.y, z0 = a.z;
+      a.vy -= P.ARROW_GRAVITY * dt;
+      a.x += a.vx * dt; a.y += a.vy * dt; a.z += a.vz * dt;
+      let hit = null; // {x,y,z}
+      // 实体判定：玩家箭打怪，怪物箭打玩家
+      if (a.own > 0) {
+        for (const mob of this.mobs.values()) {
+          if (mob.dead) continue;
+          if (Physics.segmentHitsBox(x0, y0, z0, a.x, a.y, a.z, mob)) {
+            const [, atk] = this.sessionByPid(a.own);
+            this.hurtMob(mob, a.dmg, atk || { pid: a.own }, now);
+            hit = { x: a.x, y: a.y, z: a.z };
+            break;
+          }
+        }
+      } else {
+        for (const s of this.sessions.values()) {
+          if (s.dead) continue;
+          if (Physics.segmentHitsBox(x0, y0, z0, a.x, a.y, a.z, { x: s.x, y: s.y, z: s.z, half: 0.3, height: 1.8 })) {
+            this.damagePlayer(s, a.dmg, now);
+            hit = { x: a.x, y: a.y, z: a.z };
+            break;
+          }
+        }
+      }
+      // 方块判定：路径 0.5 格步进采样
+      if (!hit) {
+        const segLen = Math.hypot(a.x - x0, a.y - y0, a.z - z0);
+        const steps = Math.max(1, Math.ceil(segLen / 0.5));
+        for (let i = 1; i <= steps; i++) {
+          const f = i / steps;
+          const bx = Math.floor(x0 + (a.x - x0) * f), by = Math.floor(y0 + (a.y - y0) * f), bz = Math.floor(z0 + (a.z - z0) * f);
+          if (MW.Blocks.isSolid(this.world.getBlock(bx, by, bz))) { hit = { x: x0 + (a.x - x0) * f, y: y0 + (a.y - y0) * f, z: z0 + (a.z - z0) * f }; break; }
+        }
+      }
+      if (hit || now >= a.dieAt || a.y < -20) {
+        const px = hit ? hit.x : a.x, py = hit ? hit.y : a.y, pz = hit ? hit.z : a.z;
+        this.arrows.delete(id);
+        for (const [ws2, s2] of this.sessions) {
+          if (P.inInterest(px, pz, s2.x, s2.z)) this.send(ws2, { t: 'arrowDie', id, x: px, y: py, z: pz });
+        }
+      }
+    }
+  }
+
+  // 玩家受伤：无敌帧 → 扣血 → 死亡进入复活倒计时
+  damagePlayer(s, dmg, now) {
+    if (s.dead || now < s.invulnUntil) return;
+    s.hp -= dmg;
+    s.invulnUntil = now + P.INVULN_MS;
+    s.lastHurtAt = now;
+    const [ws] = this.sessionByPid(s.pid);
+    if (s.hp <= 0) {
+      s.hp = 0; s.dead = true; s.deadUntil = now + P.DEATH_RESPAWN_MS;
+      if (ws) this.send(ws, { t: 'playerDie' });
+      // M3 在此结算死亡经验惩罚
+    } else if (ws) {
+      this.send(ws, { t: 'playerHurt', hp: s.hp, dmg });
+    }
+  }
+
+  // 玩家逐 tick：复活倒计时与脱战回血；返回是否有事在做
+  tickPlayers(now) {
+    let busy = false;
+    for (const [ws, s] of this.sessions) {
+      if (s.dead) {
+        busy = true;
+        if (now >= s.deadUntil) {
+          s.dead = false;
+          s.hp = s.maxHp;
+          s.x = SPAWN_X; s.z = SPAWN_Z;
+          s.y = this.world.terrainHeight(8, 8) + 1;
+          s.lastMoveMs = now;
+          this.send(ws, { t: 'teleport', x: s.x, y: s.y, z: s.z });
+          this.send(ws, { t: 'hpUpdate', hp: s.hp, max: s.maxHp });
+          this.syncVisibility(ws, s);
+        }
+        continue;
+      }
+      if (s.hp < s.maxHp) {
+        busy = true;
+        if (now - s.lastHurtAt >= P.REGEN_DELAY_MS && now >= s.nextRegenAt) {
+          s.hp = Math.min(s.maxHp, s.hp + 1);
+          s.nextRegenAt = now + 1000;
+          this.send(ws, { t: 'hpUpdate', hp: s.hp, max: s.maxHp });
+        }
+      }
+    }
+    return busy;
+  }
 
   // --- 断开 ---
   dropSession(ws) {
@@ -469,8 +637,8 @@ export class WorldDO {
   }
 
   persistSession(s) {
-    this.sql.exec(`UPDATE players SET x = ?, y = ?, z = ?, last_seen = ? WHERE token = ?`,
-      s.x, s.y, s.z, Date.now(), s.token);
+    this.sql.exec(`UPDATE players SET x = ?, y = ?, z = ?, hp = ?, last_seen = ? WHERE token = ?`,
+      s.x, s.y, s.z, s.hp, Date.now(), s.token);
   }
 
   // 周期落盘（仅在线时续约下一次）
