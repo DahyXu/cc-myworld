@@ -2,6 +2,7 @@
 'use strict';
 const assert = require('node:assert');
 require('../js/blocks.js');
+require('../shared/physics.js');
 require('../js/player.js');
 const Player = globalThis.MyWorld.Player;
 
