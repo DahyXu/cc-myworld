@@ -45,7 +45,6 @@ export class WorldDO {
     }
     // 休眠唤醒恢复：workerd 十几秒空闲即休眠 DO（连接保持打开），内存会话必须从
     // attachment + players 表重建，否则唤醒消息会被 rehello 吞掉、互见状态丢失。
-    // 互见集置空即可：下一次 move 的 syncVisibility 会重新配对（客户端按 pid 去重）。
     for (const ws of this.ctx.getWebSockets()) {
       let a = null;
       try { a = ws.deserializeAttachment(); } catch {}
@@ -60,6 +59,17 @@ export class WorldDO {
       };
       this.sessions.set(ws, s);
       if (a.pid >= this.nextPid) this.nextPid = a.pid + 1;
+    }
+    // 重建互见集：休眠前已互见的客户端两端都渲染着对方，恢复配对即可（不重发 penter）。
+    // 若置空不重建，断线方的 pexit 会因 visible 集为空而漏发，对端残留幽灵小人
+    const arr = Array.from(this.sessions.values());
+    for (let i = 0; i < arr.length; i++) {
+      for (let j = i + 1; j < arr.length; j++) {
+        if (P.inInterest(arr[i].x, arr[i].z, arr[j].x, arr[j].z)) {
+          arr[i].visible.add(arr[j].pid);
+          arr[j].visible.add(arr[i].pid);
+        }
+      }
     }
     // 唤醒后续上周期落盘（休眠时 alarm 链可能已断）
     if (this.sessions.size > 0) this.ctx.storage.setAlarm(Date.now() + P.PERSIST_INTERVAL_MS);
