@@ -331,12 +331,13 @@ Expected: FAIL，`Cannot find module '../shared/physics.js'`
     return true;
   }
 
-  // 前方脚边是否有实心方块挡路（怪物自动跳台阶用）：取移动方向上身体边缘外 0.1 格、脚踝高度处的方块
+  // 前方脚边是否有实心方块挡路（怪物自动跳台阶用）：取移动方向上身体边缘外 1 格、脚踝高度处的方块
+  // （1 格前瞻同时覆盖"贴墙"与"逼近中"两种情形，怪物提前起跳更自然）
   function blockedAhead(b, world, dirx, dirz) {
     const len = Math.hypot(dirx, dirz);
     if (len === 0) return false;
-    const px = b.x + (dirx / len) * (b.half + 0.1);
-    const pz = b.z + (dirz / len) * (b.half + 0.1);
+    const px = b.x + (dirx / len) * (b.half + 1);
+    const pz = b.z + (dirz / len) * (b.half + 1);
     return Blocks.isSolid(world.getBlock(Math.floor(px), Math.floor(b.y + 0.1), Math.floor(pz)));
   }
 
