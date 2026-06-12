@@ -5,6 +5,7 @@
   const Blocks = MW.Blocks, World = MW.World, Mesher = MW.Mesher;
   const Player = MW.Player, Raycast = MW.Raycast, UI = MW.UI;
   const Net = MW.Net, Entities = MW.Entities, P = MW.Protocol;
+  const Combat = MW.Combat, Hud = MW.Hud;
 
   const RENDER_RADIUS = 4, UNLOAD_RADIUS = 6;
   const MAX_GEN_PER_FRAME = 2, MAX_REMESH_PER_FRAME = 4, REACH = 6;
@@ -39,9 +40,12 @@
   const material = new THREE.MeshBasicMaterial({ map: tex, vertexColors: true });
 
   Entities.init(scene);
+  scene.add(camera);
 
   // --- 世界与玩家：收到 welcome 后才创建 ---
   let world = null, player = null;
+  let selfDead = false; // 死亡期间冻结输入，等服务器复活传送
+  let maxHpCache = 20; // playerHurt 只带 hp，max 来自 welcome/hpUpdate
   let respawnPending = false;
 
   // --- 区块网格管理 ---
@@ -116,13 +120,17 @@
   let hotbarIndex = 0;
   window.addEventListener('keydown', (e) => {
     if (KEYMAP[e.code]) { input[KEYMAP[e.code]] = true; if (e.code === 'Space') e.preventDefault(); }
-    const n = parseInt(e.key, 10);
-    if (n >= 1 && n <= 8) { hotbarIndex = n - 1; UI.selectSlot(hotbarIndex); }
+    if (/^[0-9]$/.test(e.key)) {
+      hotbarIndex = e.key === '0' ? 9 : parseInt(e.key, 10) - 1;
+      UI.selectSlot(hotbarIndex);
+      Combat.setHeld(hotbarIndex);
+    }
   });
   window.addEventListener('keyup', (e) => { if (KEYMAP[e.code]) input[KEYMAP[e.code]] = false; });
   window.addEventListener('wheel', (e) => {
-    hotbarIndex = (hotbarIndex + (e.deltaY > 0 ? 1 : -1) + 8) % 8;
+    hotbarIndex = (hotbarIndex + (e.deltaY > 0 ? 1 : -1) + 10) % 10;
     UI.selectSlot(hotbarIndex);
+    Combat.setHeld(hotbarIndex);
   });
   window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
@@ -159,7 +167,19 @@
 
   // --- 挖 / 放：本地预表现 + 上发服务器仲裁 ---
   document.addEventListener('mousedown', (e) => {
-    if (!isLocked() || !world) return;
+    if (!isLocked() || !world || selfDead) return;
+    if (e.button === 0) {
+      const d0 = viewDir();
+      const eye = { x: player.x, y: player.y + Player.EYE, z: player.z };
+      const consumed = Combat.onAttackClick(hotbarIndex, eye, d0, Entities.mobList(), Net);
+      if (consumed === 'shoot') {
+        Entities.spawnLocalArrow(eye.x, eye.y, eye.z, d0.x, d0.y, d0.z); // 本地箭预表现
+        return;
+      }
+      if (consumed) return; // 武器格：不挖方块
+    } else if (Combat.ITEMS[hotbarIndex].kind !== 'block') {
+      return; // 武器格右键无操作
+    }
     const d = viewDir();
     const r = Raycast.cast(world, player.x, player.y + Player.EYE, player.z, d.x, d.y, d.z, REACH);
     if (!r.hit) return;
@@ -174,7 +194,7 @@
                         ty + 1 <= player.y || ty >= player.y + Player.HEIGHT ||
                         tz + 1 <= player.z - Player.HALF || tz >= player.z + Player.HALF);
       if (overlap) return;
-      const id = Blocks.HOTBAR[hotbarIndex];
+      const id = Combat.ITEMS[hotbarIndex].id;
       world.setBlock(tx, ty, tz, id);
       Net.send({ t: 'edit', x: tx, y: ty, z: tz, id });
     }
@@ -182,7 +202,8 @@
   document.addEventListener('contextmenu', (e) => e.preventDefault());
 
   // --- HUD ---
-  UI.buildHotbar(atlas);
+  UI.buildHotbar(atlas, Combat.ITEMS);
+  Combat.init(camera);
 
   // --- 联机接线 ---
   function applyEdits(list) {
@@ -203,6 +224,9 @@
       }
     }
     for (const pm of msg.players) Entities.upsertPlayer(pm);
+    maxHpCache = msg.maxHp;
+    Hud.setHp(msg.hp, msg.maxHp);
+    for (const mb of msg.mobs) Entities.upsertMob(mb);
     UI.setOnline(msg.online);
     UI.setOverlayMode('start');
     root.MyWorld.game = { world, player, meshes, seed: msg.seed }; // 调试句柄
@@ -215,6 +239,11 @@
     player.vx = player.vy = player.vz = 0;
     respawnPending = false;
     Entities.clear();
+    maxHpCache = msg.maxHp;
+    Hud.setHp(msg.hp, msg.maxHp);
+    selfDead = false;
+    Hud.showDeath(false);
+    for (const mb of msg.mobs) Entities.upsertMob(mb);
     for (const pm of msg.players) Entities.upsertPlayer(pm);
     UI.setOnline(msg.online);
     UI.setOverlayMode('start');
@@ -247,6 +276,24 @@
     respawnPending = false;
   });
   Net.on('online', (m) => UI.setOnline(m.n));
+  Net.on('mobSpawn', (m) => Entities.upsertMob(m));
+  Net.on('mobMove', (m) => Entities.moveMob(m));
+  Net.on('mobHurt', (m) => {
+    const e = Entities.mobList().find((x) => x.id === m.id);
+    Entities.hurtMob(m);
+    if (e) Hud.floatDamage(e.x, e.y + e.height + 0.3, e.z, '-' + m.dmg, '#ffd24a');
+  });
+  Net.on('mobDie', (m) => Entities.dieMob(m.id));
+  Net.on('mobDespawn', (m) => Entities.despawnMob(m.id));
+  Net.on('arrowSpawn', (m) => Entities.remoteArrow(m));
+  Net.on('arrowDie', (m) => Entities.dieArrow(m));
+  Net.on('hpUpdate', (m) => {
+    maxHpCache = m.max;
+    Hud.setHp(m.hp, m.max);
+    if (selfDead && m.hp > 0) { selfDead = false; Hud.showDeath(false); }
+  });
+  Net.on('playerHurt', (m) => { Hud.setHp(m.hp, maxHpCache); Hud.flashRed(); });
+  Net.on('playerDie', () => { selfDead = true; Hud.showDeath(true); });
 
   // 起名表单
   function submitName() {
@@ -285,7 +332,7 @@
     if (dt > 0.05) dt = 0.05;
 
     if (world && player) {
-      if (isLocked()) Player.update(player, world, dt, input);
+      if (isLocked() && !selfDead) Player.update(player, world, dt, input);
       // 掉出世界：请求服务器传送（等待期间悬停，避免反复触发）
       if (player.y < -10) {
         if (!respawnPending && Net.connected()) {
@@ -304,7 +351,9 @@
       moveAcc += dt * 1000;
       if (moveAcc >= P.MOVE_INTERVAL_MS) { moveAcc = 0; sendMove(); }
     }
-    Entities.update(dt);
+    Entities.update(dt, world);
+    Combat.update(dt);
+    Hud.update(dt, camera);
     renderer.render(scene, camera);
   }
   requestAnimationFrame(frame);
