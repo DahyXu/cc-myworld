@@ -2111,7 +2111,6 @@ git commit -m "feat: 实体渲染扩展（四种怪物模型/等级名牌/受击
     floaters.push({ el, x, y, z, t: 1 });
   }
 
-  const v = { x: 0, y: 0, z: 0 };
   function update(dt, camera) {
     for (let i = floaters.length - 1; i >= 0; i--) {
       const f = floaters[i];
@@ -2220,6 +2219,12 @@ git commit -m "feat: 实体渲染扩展（四种怪物模型/等级名牌/受击
 
 ```html
       <p><kbd>1</kbd> 剑　<kbd>2</kbd> 弓　对准怪物左键攻击</p>
+```
+
+并把原「<kbd>1</kbd>~<kbd>8</kbd> 或滚轮选择方块」一行改为（1/2 已是武器）：
+
+```html
+      <p><kbd>3</kbd>~<kbd>9</kbd>、<kbd>0</kbd> 或滚轮选方块　<kbd>ESC</kbd> 暂停</p>
 ```
 
 script 标签序整体替换为：
