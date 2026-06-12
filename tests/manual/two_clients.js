@@ -1,5 +1,5 @@
 // tests/manual/two_clients.js — 双客户端联机协议探针
-// 先启动: npx wrangler dev --port 8787
+// 先启动: npx wrangler dev --port 8787 --persist-to ../cc-myworld-state
 // 再运行: node tests/manual/two_clients.js [ws://127.0.0.1:8787/ws]
 'use strict';
 const assert = require('node:assert');
