@@ -60,6 +60,7 @@
 - 被动怪被打后追击「最近的玩家」而非「打它的人」（aiStep 只看 nearest，aggroPid 仅作开关）：协作场景可接受的有意简化
 - 营地门口拉锯：主动怪回巢满血后玩家仍在视野会立即再追——回巢无敌防风筝的既定后果，非缺陷
 - 只要有玩家驻留在任一营地保持半径内，tick 持续运行、DO 不休眠（按驻留时长计费）——「营地只在有人时活动」设计的固有成本
+- 重连会重置脱战回血计时（lastHurtAt 为会话内存字段不落库）：受伤后立刻断线重连可提前 ≤5 秒开始回血——伤害本身已持久化，无免伤利益，接受
 
 ---
 
@@ -1653,7 +1654,8 @@ git commit -m "feat: WorldDO 战斗结算（近战/弓箭弹道/玩家伤害/死
     const bot = box(0.05, 0.3, 0.05, 0x8a5a2b); bot.position.y = -0.18; bot.rotation.z = -0.4;
     heldBow.add(top, mid, bot);
     held.add(heldSword, heldBow);
-    held.position.set(0.35, -0.32, -0.55);
+    held.scale.set(0.45, 0.45, 0.45); // 近距视角下整体缩小，避免手持物占据过多视野
+    held.position.set(0.38, -0.3, -0.6);
     held.rotation.set(-0.2, 0.3, 0);
     camera.add(held);
     setHeld(0);
