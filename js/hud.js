@@ -31,7 +31,6 @@
     floaters.push({ el, x, y, z, t: 1 });
   }
 
-  const v = { x: 0, y: 0, z: 0 };
   function update(dt, camera) {
     for (let i = floaters.length - 1; i >= 0; i--) {
       const f = floaters[i];
