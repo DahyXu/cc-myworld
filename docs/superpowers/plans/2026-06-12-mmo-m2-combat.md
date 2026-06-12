@@ -1274,12 +1274,16 @@ boot() 休眠恢复循环里构造会话的 `const s = { ... };` 同样追加战
       };
 ```
 
-`persistSession` 的 UPDATE 改为同时落 hp：
+`persistSession` 的 UPDATE 改为同时落 hp（死亡中落库视同已复活，防"死亡瞬间断线→重连原地满血"绕过复活语义）：
 
 ```js
   persistSession(s) {
+    // 死亡中落库视同已复活：出生点 + 满血（复活计时跨断线不保留，直接兑现其结果）
+    const px = s.dead ? SPAWN_X : s.x, pz = s.dead ? SPAWN_Z : s.z;
+    const py = s.dead ? this.world.terrainHeight(8, 8) + 1 : s.y;
+    const ph = s.dead ? s.maxHp : s.hp;
     this.sql.exec(`UPDATE players SET x = ?, y = ?, z = ?, hp = ?, last_seen = ? WHERE token = ?`,
-      s.x, s.y, s.z, s.hp, Date.now(), s.token);
+      px, py, pz, ph, Date.now(), s.token);
   }
 ```
 
@@ -1363,45 +1367,49 @@ boot() 休眠恢复循环里构造会话的 `const s = { ... };` 同样追加战
     this.ensureTick();
   }
 
-  // 逐 tick 积分弹道：线段查方块（DDA 太重，按 0.5 格采样）与实体 AABB
+  // 逐 tick 积分弹道：先按 0.5 格采样找最早方块命中并截断线段，再在截断段上判实体
+  // （若实体判定先吃整段，一 tick 3 格的箭会隔薄墙命中墙后目标——spec 要求箭被方块挡住）
   tickArrows(now) {
     const dt = P.MOB_TICK_MS / 1000;
     for (const [id, a] of Array.from(this.arrows)) {
       const x0 = a.x, y0 = a.y, z0 = a.z;
       a.vy -= P.ARROW_GRAVITY * dt;
       a.x += a.vx * dt; a.y += a.vy * dt; a.z += a.vz * dt;
+      // 方块命中：求截断点（无命中则截断点=本 tick 终点）
+      let bx = a.x, by = a.y, bz = a.z, blockHit = false;
+      const segLen = Math.hypot(a.x - x0, a.y - y0, a.z - z0);
+      const steps = Math.max(1, Math.ceil(segLen / 0.5));
+      for (let i = 1; i <= steps; i++) {
+        const f = i / steps;
+        const sx = x0 + (a.x - x0) * f, sy = y0 + (a.y - y0) * f, sz = z0 + (a.z - z0) * f;
+        if (MW.Blocks.isSolid(this.world.getBlock(Math.floor(sx), Math.floor(sy), Math.floor(sz)))) {
+          bx = sx; by = sy; bz = sz; blockHit = true;
+          break;
+        }
+      }
       let hit = null; // {x,y,z}
-      // 实体判定：玩家箭打怪，怪物箭打玩家
+      // 实体判定（只在截断段上）：玩家箭打怪，怪物箭打玩家
       if (a.own > 0) {
         for (const mob of this.mobs.values()) {
           if (mob.dead) continue;
-          if (Physics.segmentHitsBox(x0, y0, z0, a.x, a.y, a.z, mob)) {
+          if (Physics.segmentHitsBox(x0, y0, z0, bx, by, bz, mob)) {
             const [, atk] = this.sessionByPid(a.own);
             this.hurtMob(mob, a.dmg, atk || { pid: a.own }, now);
-            hit = { x: a.x, y: a.y, z: a.z };
+            hit = { x: bx, y: by, z: bz };
             break;
           }
         }
       } else {
         for (const s of this.sessions.values()) {
           if (s.dead) continue;
-          if (Physics.segmentHitsBox(x0, y0, z0, a.x, a.y, a.z, { x: s.x, y: s.y, z: s.z, half: 0.3, height: 1.8 })) {
+          if (Physics.segmentHitsBox(x0, y0, z0, bx, by, bz, { x: s.x, y: s.y, z: s.z, half: 0.3, height: 1.8 })) {
             this.damagePlayer(s, a.dmg, now);
-            hit = { x: a.x, y: a.y, z: a.z };
+            hit = { x: bx, y: by, z: bz };
             break;
           }
         }
       }
-      // 方块判定：路径 0.5 格步进采样
-      if (!hit) {
-        const segLen = Math.hypot(a.x - x0, a.y - y0, a.z - z0);
-        const steps = Math.max(1, Math.ceil(segLen / 0.5));
-        for (let i = 1; i <= steps; i++) {
-          const f = i / steps;
-          const bx = Math.floor(x0 + (a.x - x0) * f), by = Math.floor(y0 + (a.y - y0) * f), bz = Math.floor(z0 + (a.z - z0) * f);
-          if (MW.Blocks.isSolid(this.world.getBlock(bx, by, bz))) { hit = { x: x0 + (a.x - x0) * f, y: y0 + (a.y - y0) * f, z: z0 + (a.z - z0) * f }; break; }
-        }
-      }
+      if (!hit && blockHit) hit = { x: bx, y: by, z: bz };
       if (hit || now >= a.dieAt || a.y < -20) {
         const px = hit ? hit.x : a.x, py = hit ? hit.y : a.y, pz = hit ? hit.z : a.z;
         this.arrows.delete(id);
