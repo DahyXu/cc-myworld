@@ -85,6 +85,8 @@ export class WorldDO {
     }
     // 唤醒后续上周期落盘（休眠时 alarm 链可能已断）
     if (this.sessions.size > 0) this.ctx.storage.setAlarm(Date.now() + P.PERSIST_INTERVAL_MS);
+    // 休眠唤醒后若恢复了会话，立即恢复游戏 tick（否则纯挂机客户端旁的营地不会复活）
+    if (this.sessions.size > 0) this.ensureTick();
   }
 
   async fetch(request) {
@@ -257,36 +259,43 @@ export class WorldDO {
   campKey(c) { return c.ccx + '_' + c.ccz; }
   mobId(c, slot) { return c.ccx + '_' + c.ccz + '_' + slot; }
 
-  // 营地激活扫描：有玩家在 5 区块内 → 激活并生成怪；无人 → 整体移除（再激活全量重生）
+  // 营地激活扫描：有玩家在 5 区块内 → 激活并生成怪；超出保持半径 → 整体移除（再激活全量重生）
   scanCamps() {
-    const want = new Map();
+    const want = new Map(); // 激活集（5 区块）
+    const keep = new Set(); // 保持集（6 区块滞回：防玩家在边界来回导致整营反复重生）
     for (const s of this.sessions.values()) {
       if (s.dead) continue;
       for (const c of MobsDef.campsNear(this.seed, s.x, s.z, P.CAMP_ACTIVE_CHUNKS)) {
         want.set(this.campKey(c), c);
+      }
+      for (const c of MobsDef.campsNear(this.seed, s.x, s.z, P.CAMP_ACTIVE_CHUNKS + 1)) {
+        keep.add(this.campKey(c));
       }
     }
     for (const [key, c] of want) {
       if (!this.activeCamps.has(key)) this.activateCamp(key, c);
     }
     for (const [key, entry] of Array.from(this.activeCamps)) {
-      if (!want.has(key)) this.deactivateCamp(key, entry);
+      if (!keep.has(key)) this.deactivateCamp(key, entry);
     }
   }
 
   activateCamp(key, c) {
-    // 预生成营地周围 5×5 区块（怪物物理与落点需要真实地形；服务器区块永不淘汰）
+    // 预生成营地周围 5×5 区块（怪物物理与落点需要真实地形；服务器区块永不淘汰）。
+    // 注意：首次激活同步生成 25 区块会让该 tick 顿一下——一次性成本、永不重复，M2 接受
     for (let dx = -2; dx <= 2; dx++)
       for (let dz = -2; dz <= 2; dz++)
         this.world.ensureChunk(c.ccx + dx, c.ccz + dz);
-    const gy = this.world.terrainHeight(Math.floor(c.x), Math.floor(c.z)) + 1;
-    const entry = { camp: c, baseY: gy, mobIds: [] };
+    const entry = { camp: c, mobIds: [] };
     for (let i = 0; i < c.count; i++) {
       const id = this.mobId(c, i);
       const t = MobsDef.TYPES[c.type];
       const st = MobsDef.mobStats(c.type, c.levels[i]);
       const ang = (i / c.count) * Math.PI * 2;
-      const mob = Physics.createBody(c.x + Math.cos(ang) * 2, gy + 1, c.z + Math.sin(ang) * 2, t.half, t.height);
+      const mx = c.x + Math.cos(ang) * 2, mz = c.z + Math.sin(ang) * 2;
+      // 落点高度按各怪所在列取地表：坡地上用营地中心高度会嵌墙/悬空
+      const my = this.world.terrainHeight(Math.floor(mx), Math.floor(mz)) + 1;
+      const mob = Physics.createBody(mx, my, mz, t.half, t.height);
       Object.assign(mob, {
         id, type: c.type, lv: c.levels[i], hp: st.hp, maxHp: st.hp, dmg: st.dmg, xp: st.xp,
         speed: t.speed, yaw: 0, state: 'idle', aggroPid: null, atkReadyAt: 0,

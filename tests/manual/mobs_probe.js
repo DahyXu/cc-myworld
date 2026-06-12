@@ -45,7 +45,8 @@ function tok() {
     ws.send(JSON.stringify({ t: 'move', x, y, z, yaw: 0, pitch: 0 }));
     await sleep(100);
   }
-  await sleep(4000); // 等激活扫描（1Hz）与游走启动
+  // 轮询等待激活扫描（1Hz）与首批游走：首次激活要同步生成 25 区块，慢机器上给足 10 秒
+  for (let i = 0; i < 100 && !(seen.spawn.length >= camp.count && seen.move > 0); i++) await sleep(100);
 
   assert.ok(seen.spawn.length >= camp.count, '收到整营 mobSpawn，实收 ' + seen.spawn.length);
   assert.ok(seen.spawn.every((m) => m.type === 'slime' && m.hp > 0 && m.maxHp >= 12), 'mobSpawn 字段合法');
