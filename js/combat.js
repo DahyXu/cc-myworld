@@ -86,7 +86,8 @@
     let best = null, bd = Infinity;
     for (const m of mobList) {
       if (Physics.segmentHitsBox(eye.x, eye.y, eye.z, ex, ey, ez, m)) {
-        const d = Math.hypot(m.x - eye.x, m.y - eye.y, m.z - eye.z);
+        // 距离按怪物中心算（脚底点在高矮怪混战时会排错最近者）
+        const d = Math.hypot(m.x - eye.x, m.y + m.height / 2 - eye.y, m.z - eye.z);
         if (d < bd) { bd = d; best = m; }
       }
     }
