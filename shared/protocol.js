@@ -12,6 +12,20 @@
   const RECONNECT_BASE_MS = 1000, RECONNECT_MAX_MS = 15000;
   const VALID_BLOCK_IDS = [0, 1, 2, 3, 4, 5, 6, 7, 8];
 
+  // —— M2 战斗常量 ——
+  const MELEE_RANGE = 3.5;          // 剑射程（格）
+  const MELEE_CD_MS = 500;          // 剑冷却
+  const BOW_CD_MS = 1000;           // 弓冷却
+  const ARROW_SPEED = 30;           // 箭初速（格/秒）
+  const ARROW_GRAVITY = 18;         // 箭重力（弱于实体重力，弹道更平）
+  const ARROW_LIFE_MS = 5000;       // 箭最长存活
+  const INVULN_MS = 500;            // 玩家受击无敌
+  const REGEN_DELAY_MS = 5000;      // 脱战回血延迟
+  const DEATH_RESPAWN_MS = 3000;    // 死亡到复活
+  const MOB_TICK_MS = 100;          // 服务器游戏 tick
+  const CAMP_ACTIVE_CHUNKS = 5;     // 营地激活半径（区块）
+  const KNOCKBACK_H = 6, KNOCKBACK_V = 3; // 近战击退冲量
+
   // 区块尺寸 16 与 World.CHUNK_X 一致（protocol 不依赖 world，避免加载顺序耦合）
   function chunkOf(v) { return Math.floor(v / 16); }
 
@@ -61,10 +75,24 @@
     return Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * Math.pow(2, attempt));
   }
 
+  // 近战意图校验：mobId 为非空短字符串
+  function validAttack(msg) {
+    return !!(msg && typeof msg.id === 'string' && msg.id.length > 0 && msg.id.length <= 24);
+  }
+
+  // 射箭意图校验：方向分量有限且模非零（服务器自行归一化）
+  function validShoot(msg) {
+    if (!msg || !isFinite(msg.dx) || !isFinite(msg.dy) || !isFinite(msg.dz)) return false;
+    return Math.hypot(msg.dx, msg.dy, msg.dz) > 1e-6;
+  }
+
   root.MyWorld = root.MyWorld || {};
   root.MyWorld.Protocol = {
     INTEREST_CHUNKS, REACH, REACH_SLACK, MAX_HSPEED, MAX_VSPEED,
     MOVE_INTERVAL_MS, PERSIST_INTERVAL_MS, VALID_BLOCK_IDS,
-    inInterest, validEdit, clampMove, sanitizeName, backoffMs,
+    MELEE_RANGE, MELEE_CD_MS, BOW_CD_MS, ARROW_SPEED, ARROW_GRAVITY, ARROW_LIFE_MS,
+    INVULN_MS, REGEN_DELAY_MS, DEATH_RESPAWN_MS, MOB_TICK_MS, CAMP_ACTIVE_CHUNKS,
+    KNOCKBACK_H, KNOCKBACK_V,
+    inInterest, validEdit, clampMove, sanitizeName, backoffMs, validAttack, validShoot,
   };
 })(typeof self !== 'undefined' ? self : globalThis);

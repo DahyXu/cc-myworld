@@ -48,4 +48,30 @@ assert.strictEqual(P.backoffMs(0), 1000);
 assert.strictEqual(P.backoffMs(1), 2000);
 assert.strictEqual(P.backoffMs(10), 15000, '封顶 15 秒');
 
+// 战斗常量存在性
+assert.strictEqual(P.MELEE_RANGE, 3.5);
+assert.strictEqual(P.MELEE_CD_MS, 500);
+assert.strictEqual(P.BOW_CD_MS, 1000);
+assert.strictEqual(P.ARROW_SPEED, 30);
+assert.ok(P.ARROW_GRAVITY > 0);
+assert.strictEqual(P.INVULN_MS, 500);
+assert.strictEqual(P.REGEN_DELAY_MS, 5000);
+assert.strictEqual(P.DEATH_RESPAWN_MS, 3000);
+assert.strictEqual(P.MOB_TICK_MS, 100);
+assert.strictEqual(P.CAMP_ACTIVE_CHUNKS, 5);
+
+// validAttack：id 必须是非空短字符串
+assert.ok(P.validAttack({ id: '3_4_0' }));
+assert.ok(!P.validAttack({ id: '' }));
+assert.ok(!P.validAttack({ id: 123 }));
+assert.ok(!P.validAttack({ id: 'x'.repeat(40) }));
+assert.ok(!P.validAttack(null));
+
+// validShoot：方向有限且非零
+assert.ok(P.validShoot({ dx: 1, dy: 0, dz: 0 }));
+assert.ok(P.validShoot({ dx: 0.3, dy: -0.5, dz: 0.8 }));
+assert.ok(!P.validShoot({ dx: 0, dy: 0, dz: 0 }));
+assert.ok(!P.validShoot({ dx: NaN, dy: 0, dz: 1 }));
+assert.ok(!P.validShoot(null));
+
 console.log('test_protocol OK');
