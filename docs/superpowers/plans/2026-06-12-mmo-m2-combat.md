@@ -1910,6 +1910,9 @@ git commit -m "feat: 客户端战斗模块（物品表/武器图标/手持挥击
       e.hp = m.hp; e.maxHp = m.maxHp;
       e.dieT = 0;
       e.group.rotation.z = 0;
+      // 重生复用同 id：血条状态一并复位（否则残留死亡前的半血条最多 2 秒）
+      e.bar.group.visible = false;
+      e.bar.fg.scale.x = 0.96;
     }
   }
 
