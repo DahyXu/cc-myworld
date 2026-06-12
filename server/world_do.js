@@ -1,13 +1,18 @@
 // server/world_do.js — 世界 Durable Object：连接管理、状态同步、SQLite 持久化
 // 权威职责：握手（种子/diff/在线玩家）、移动限速与兴趣管理、编辑仲裁与广播、进度落盘
 import '../js/noise.js';
+import '../js/blocks.js';
 import '../js/world.js';
 import '../shared/protocol.js';
+import '../shared/physics.js';
+import '../shared/stats.js';
+import '../shared/mobs_def.js';
 
 const MW = globalThis.MyWorld;
 const World = MW.World, P = MW.Protocol;
+const Physics = MW.Physics, Stats = MW.Stats, MobsDef = MW.MobsDef;
 
-const SPAWN_X = 8.5, SPAWN_Z = 8.5;
+const SPAWN_X = MobsDef.SPAWN_X, SPAWN_Z = MobsDef.SPAWN_Z;
 const EYE = 1.62; // 与客户端 Player.EYE 一致（编辑距离校验用视点）
 
 export class WorldDO {
@@ -17,6 +22,13 @@ export class WorldDO {
     // ws -> { pid, token, name, x, y, z, yaw, pitch, lastMoveMs, visible:Set<pid> }
     this.sessions = new Map();
     this.nextPid = 1;
+    // —— M2 怪物运行时状态（不持久化：DO 重启/休眠即重置，有意设计）——
+    this.mobs = new Map();        // mobId -> mob
+    this.activeCamps = new Map(); // campKey "ccx_ccz" -> { camp, mobIds: [] }
+    this.arrows = new Map();      // arrowId -> arrow
+    this.nextArrowId = 1;
+    this.tickTimer = null;
+    this.idleTicks = 0;
     this.ctx.blockConcurrencyWhile(async () => { this.boot(); });
   }
 
@@ -146,9 +158,14 @@ export class WorldDO {
         this.send(ows, { t: 'penter', pid: s.pid, name: s.name, x: s.x, y: s.y, z: s.z, yaw: s.yaw });
       }
     }
-    this.send(ws, { t: 'welcome', pid: s.pid, seed: this.seed, x: s.x, y: s.y, z: s.z, edits, players, online: this.sessions.size });
+    const mobs = [];
+    for (const m of this.mobs.values()) {
+      if (!m.dead && P.inInterest(m.x, m.z, s.x, s.z)) mobs.push(this.mobSpawnMsg(m));
+    }
+    this.send(ws, { t: 'welcome', pid: s.pid, seed: this.seed, x: s.x, y: s.y, z: s.z, edits, players, online: this.sessions.size, hp: 20, maxHp: 20, mobs });
     this.broadcastOnline();
     this.ctx.storage.setAlarm(Date.now() + P.PERSIST_INTERVAL_MS);
+    this.ensureTick();
   }
 
   // --- 移动：限速 + 互见集维护 ---
@@ -162,6 +179,7 @@ export class WorldDO {
     if (isFinite(msg.yaw)) s.yaw = msg.yaw;
     if (isFinite(msg.pitch)) s.pitch = msg.pitch;
     this.syncVisibility(ws, s);
+    this.ensureTick(); // 玩家移动可能令新营地进入激活半径
   }
 
   // 重算 s 与所有人的互见关系；保持可见者收 pmove
@@ -222,6 +240,202 @@ export class WorldDO {
     this.send(ws, { t: 'teleport', x: s.x, y: s.y, z: s.z });
     this.syncVisibility(ws, s);
   }
+
+  // ====== M2 怪物模拟 ======
+
+  // 有事可做就保证 tick 在跑；空转 5 秒自停（允许 DO 休眠）
+  ensureTick() {
+    this.idleTicks = 0;
+    if (this.tickTimer) return;
+    this.tickTimer = setInterval(() => this.tick(), P.MOB_TICK_MS);
+  }
+
+  stopTick() {
+    if (this.tickTimer) { clearInterval(this.tickTimer); this.tickTimer = null; }
+  }
+
+  campKey(c) { return c.ccx + '_' + c.ccz; }
+  mobId(c, slot) { return c.ccx + '_' + c.ccz + '_' + slot; }
+
+  // 营地激活扫描：有玩家在 5 区块内 → 激活并生成怪；无人 → 整体移除（再激活全量重生）
+  scanCamps() {
+    const want = new Map();
+    for (const s of this.sessions.values()) {
+      if (s.dead) continue;
+      for (const c of MobsDef.campsNear(this.seed, s.x, s.z, P.CAMP_ACTIVE_CHUNKS)) {
+        want.set(this.campKey(c), c);
+      }
+    }
+    for (const [key, c] of want) {
+      if (!this.activeCamps.has(key)) this.activateCamp(key, c);
+    }
+    for (const [key, entry] of Array.from(this.activeCamps)) {
+      if (!want.has(key)) this.deactivateCamp(key, entry);
+    }
+  }
+
+  activateCamp(key, c) {
+    // 预生成营地周围 5×5 区块（怪物物理与落点需要真实地形；服务器区块永不淘汰）
+    for (let dx = -2; dx <= 2; dx++)
+      for (let dz = -2; dz <= 2; dz++)
+        this.world.ensureChunk(c.ccx + dx, c.ccz + dz);
+    const gy = this.world.terrainHeight(Math.floor(c.x), Math.floor(c.z)) + 1;
+    const entry = { camp: c, baseY: gy, mobIds: [] };
+    for (let i = 0; i < c.count; i++) {
+      const id = this.mobId(c, i);
+      const t = MobsDef.TYPES[c.type];
+      const st = MobsDef.mobStats(c.type, c.levels[i]);
+      const ang = (i / c.count) * Math.PI * 2;
+      const mob = Physics.createBody(c.x + Math.cos(ang) * 2, gy + 1, c.z + Math.sin(ang) * 2, t.half, t.height);
+      Object.assign(mob, {
+        id, type: c.type, lv: c.levels[i], hp: st.hp, maxHp: st.hp, dmg: st.dmg, xp: st.xp,
+        speed: t.speed, yaw: 0, state: 'idle', aggroPid: null, atkReadyAt: 0,
+        dead: false, respawnAt: 0, wanderUntil: 0, tx: c.x, tz: c.z, campX: c.x, campZ: c.z, key,
+      });
+      this.mobs.set(id, mob);
+      entry.mobIds.push(id);
+      this.broadcastMob(mob, this.mobSpawnMsg(mob));
+    }
+    this.activeCamps.set(key, entry);
+  }
+
+  deactivateCamp(key, entry) {
+    for (const id of entry.mobIds) {
+      const mob = this.mobs.get(id);
+      if (mob && !mob.dead) this.broadcastMob(mob, { t: 'mobDespawn', id });
+      this.mobs.delete(id);
+    }
+    this.activeCamps.delete(key);
+  }
+
+  mobSpawnMsg(m) {
+    return { t: 'mobSpawn', id: m.id, type: m.type, lv: m.lv, x: m.x, y: m.y, z: m.z, hp: m.hp, maxHp: m.maxHp };
+  }
+
+  // 给兴趣范围内的玩家广播怪物事件
+  broadcastMob(mob, msg) {
+    for (const [ws, s] of this.sessions) {
+      if (P.inInterest(mob.x, mob.z, s.x, s.z)) this.send(ws, msg);
+    }
+  }
+
+  // 兴趣内最近的存活玩家
+  nearestPlayer(mob) {
+    let best = null;
+    for (const s of this.sessions.values()) {
+      if (s.dead) continue;
+      const d = Math.hypot(s.x - mob.x, s.z - mob.z);
+      if (d <= MobsDef.TYPES[mob.type].sight * 2 + 8 && (!best || d < best.dist)) {
+        best = { dist: d, pid: s.pid, x: s.x, y: s.y, z: s.z, session: s };
+      }
+    }
+    return best;
+  }
+
+  sessionByPid(pid) {
+    for (const [ws, s] of this.sessions) if (s.pid === pid) return [ws, s];
+    return [null, null];
+  }
+
+  tick() {
+    const now = Date.now();
+    let busy = false;
+    this.tickN = (this.tickN || 0) + 1;
+    if (this.tickN % 10 === 1) this.scanCamps(); // 1Hz 扫描激活
+    for (const mob of this.mobs.values()) {
+      busy = true;
+      this.tickMob(mob, now);
+    }
+    this.tickArrows(now);
+    if (this.arrows.size > 0) busy = true;
+    busy = this.tickPlayers(now) || busy;
+    if (busy) this.idleTicks = 0;
+    else if (++this.idleTicks > 50) this.stopTick(); // 空转 5 秒自停
+  }
+
+  tickMob(mob, now) {
+    const dt = P.MOB_TICK_MS / 1000;
+    // 死亡：到点原地重生（满血、回营地落点）
+    if (mob.dead) {
+      if (now >= mob.respawnAt) {
+        const st = MobsDef.mobStats(mob.type, mob.lv);
+        mob.hp = st.hp; mob.dead = false; mob.state = 'idle'; mob.aggroPid = null;
+        mob.x = mob.campX; mob.z = mob.campZ;
+        mob.y = this.world.terrainHeight(Math.floor(mob.x), Math.floor(mob.z)) + 1;
+        mob.vx = mob.vy = mob.vz = 0;
+        this.broadcastMob(mob, this.mobSpawnMsg(mob));
+      }
+      return;
+    }
+    const near = this.nearestPlayer(mob);
+    const campDist = Math.hypot(mob.x - mob.campX, mob.z - mob.campZ);
+    const r = MobsDef.aiStep(mob, { nearest: near ? { dist: near.dist, pid: near.pid } : null, campDist }, now);
+    mob.state = r.state;
+    if (r.healed) { mob.hp = mob.maxHp; mob.aggroPid = null; }
+
+    // 位移目标
+    let tx = null, tz = null, speedMul = 1;
+    if (r.state === 'return') { tx = mob.campX; tz = mob.campZ; }
+    else if (r.state === 'chase' && near) {
+      if (r.retreat) { tx = mob.x + (mob.x - near.x); tz = mob.z + (mob.z - near.z); } // 反向远离
+      else if (!r.shootPid && !r.attackPid) { tx = near.x; tz = near.z; }
+    } else if (r.state === 'idle') {
+      // 游走：到期换营地 8 格内随机点
+      if (now >= mob.wanderUntil) {
+        const a = Math.random() * Math.PI * 2, rr = Math.random() * MobsDef.WANDER_R;
+        mob.tx = mob.campX + Math.cos(a) * rr; mob.tz = mob.campZ + Math.sin(a) * rr;
+        mob.wanderUntil = now + 2000 + Math.random() * 2000;
+      }
+      if (Math.hypot(mob.tx - mob.x, mob.tz - mob.z) > 0.8) { tx = mob.tx; tz = mob.tz; speedMul = 0.5; }
+    }
+
+    // 速度与跳跃
+    if (tx != null) {
+      const dx = tx - mob.x, dz = tz - mob.z;
+      const len = Math.hypot(dx, dz);
+      if (len > 0.05) {
+        const sp = mob.speed * speedMul;
+        mob.vx = dx / len * sp; mob.vz = dz / len * sp;
+        mob.yaw = Math.atan2(-mob.vx, -mob.vz);
+        // 10Hz tick 下半隐式欧拉对跳跃顶点有离散低估：v=9 顶点仅 0.9 格跳不上台阶，取 10（顶点 1.2 格）
+        if (mob.onGround && Physics.blockedAhead(mob, this.world, dx, dz)) Physics.tryJump(mob, 10);
+        if (mob.type === 'slime' && mob.onGround) Physics.tryJump(mob, 5); // 史莱姆弹跳移动（纯观感，不用于爬台阶）
+      } else { mob.vx = 0; mob.vz = 0; }
+    } else { mob.vx = 0; mob.vz = 0; }
+
+    const px = mob.x, py = mob.y, pz = mob.z;
+    Physics.step(mob, this.world, dt);
+    // 掉出世界兜底：传回营地
+    if (mob.y < -10) {
+      mob.x = mob.campX; mob.z = mob.campZ;
+      mob.y = this.world.terrainHeight(Math.floor(mob.x), Math.floor(mob.z)) + 1;
+      mob.vx = mob.vy = mob.vz = 0;
+    }
+
+    // 攻击意图（回巢途中无敌不攻击；伤害结算在 Task 6 接入 damagePlayer）
+    if (r.attackPid != null && now >= mob.atkReadyAt) {
+      mob.atkReadyAt = now + MobsDef.TYPES[mob.type].atkCdMs;
+      const [, victim] = this.sessionByPid(r.attackPid);
+      if (victim) this.damagePlayer(victim, mob.dmg, now);
+    }
+    if (r.shootPid != null && now >= mob.atkReadyAt) {
+      mob.atkReadyAt = now + MobsDef.TYPES[mob.type].atkCdMs;
+      const [, victim] = this.sessionByPid(r.shootPid);
+      if (victim) this.spawnArrow(mob.x, mob.y + mob.height * 0.8, mob.z,
+        victim.x - mob.x, victim.y + 1.4 - (mob.y + mob.height * 0.8), victim.z - mob.z, 0, mob.dmg);
+    }
+
+    // 位置广播（有移动才发）
+    if (Math.abs(mob.x - px) + Math.abs(mob.y - py) + Math.abs(mob.z - pz) > 0.001) {
+      this.broadcastMob(mob, { t: 'mobMove', id: mob.id, x: mob.x, y: mob.y, z: mob.z, yaw: mob.yaw });
+    }
+  }
+
+  // Task 6 实现：先放空壳保证可运行
+  damagePlayer(victim, dmg, now) {}
+  spawnArrow(x, y, z, dx, dy, dz, ownerPid, dmg) {}
+  tickArrows(now) {}
+  tickPlayers(now) { return false; }
 
   // --- 断开 ---
   dropSession(ws) {
