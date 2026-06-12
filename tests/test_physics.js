@@ -80,4 +80,16 @@ const stepUp = { getBlock: (x, y, z) => (y < 10 || (x >= 5 && y < 11) ? 3 : 0) }
   assert.ok(!P.segmentHitsBox(0, 10.5, 5, 4, 10.5, 5, box), '没够到');
 }
 
+// 8) 10Hz 服务器 tick 下自动跳上 1 格台阶（消费方回归：半隐式欧拉离散低估顶点，v=10 顶点 1.2 格）
+{
+  const b = P.createBody(4.0, 10, 0.5, 0.4, 0.9); // 恶狼尺寸
+  for (let i = 0; i < 50; i++) {
+    b.vx = 4.0; b.vz = 0;
+    if (b.onGround && P.blockedAhead(b, stepUp, 1, 0)) P.tryJump(b, 10);
+    P.step(b, stepUp, 0.1);
+  }
+  assert.ok(Math.abs(b.y - 11) < 0.05, '10Hz 下跳上台阶, y=' + b.y);
+  assert.ok(b.x > 5, '站上台阶, x=' + b.x);
+}
+
 console.log('test_physics OK');
