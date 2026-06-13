@@ -9,7 +9,7 @@
   const mobs = new Map();    // id -> { group, tx, ty, tz, tyaw, hp, maxHp, half, height, hurtUntil, dieT, hpBar }
   const arrows = new Map();  // id -> { group, x, y, z, vx, vy, vz, local }
 
-  function init(s) { scene = s; }
+  function init(s) { scene = s; npc = null; }
 
   function colorOf(pid) {
     const hues = [0x3b6fd4, 0xd43b3b, 0x3bd46f, 0xd4a23b, 0x8f3bd4, 0x3bc8d4];
@@ -208,6 +208,45 @@
     return out;
   }
 
+  // —— NPC 长老（固定单体，非同步实体）——
+  let npc = null; // { group, marker }
+  // 标记纹理：状态 'accept'(黄!)/'turnin'(绿?)/'none'
+  function markerSprite(symbol, color) {
+    const cv = root.document.createElement('canvas');
+    cv.width = 64; cv.height = 64;
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = color;
+    ctx.font = 'bold 56px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(symbol, 32, 36);
+    const tex = new root.THREE.CanvasTexture(cv);
+    const sp = new root.THREE.Sprite(new root.THREE.SpriteMaterial({ map: tex, depthTest: false }));
+    sp.scale.set(0.6, 0.6, 1);
+    return sp;
+  }
+
+  function setNpc(x, y, z) {
+    if (npc) return;
+    const g = humanoid(0xc8a23b, 0xe8b88a); // 金袍长老
+    const tag = nameTag('长老', 1);
+    tag.position.y = 2.15;
+    g.add(tag);
+    const marker = new root.THREE.Group();
+    marker.position.y = 2.55;
+    g.add(marker);
+    g.position.set(x, y, z);
+    scene.add(g);
+    npc = { group: g, marker };
+  }
+
+  function setNpcMarker(state) {
+    if (!npc) return;
+    const m = npc.marker;
+    while (m.children.length) m.remove(m.children[0]);
+    if (state === 'accept') m.add(markerSprite('！', '#ffd24a'));
+    else if (state === 'turnin') m.add(markerSprite('？', '#7ec850'));
+  }
+
   // —— 箭 ——
   let localArrowN = 0;
   function arrowModel() {
@@ -300,6 +339,6 @@
   root.MyWorld.Entities = {
     init, upsertPlayer, movePlayer, removePlayer, clear, update, count,
     upsertMob, moveMob, hurtMob, dieMob, despawnMob, mobList,
-    spawnLocalArrow, remoteArrow, dieArrow,
+    spawnLocalArrow, remoteArrow, dieArrow, setNpc, setNpcMarker,
   };
 })(typeof self !== 'undefined' ? self : globalThis);
