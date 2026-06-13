@@ -21,6 +21,34 @@
     root.document.getElementById('deathOverlay').style.display = show ? 'flex' : 'none';
   }
 
+  function setLevel(level) {
+    root.document.getElementById('lvBadge').textContent = 'Lv.' + level;
+  }
+
+  // xpNext=0 表示满级 → 经验条满格
+  function setXp(xp, level, xpNext) {
+    setLevel(level);
+    const pct = xpNext > 0 ? Math.max(0, Math.min(100, Math.round(xp / xpNext * 100))) : 100;
+    root.document.getElementById('xpFill').style.width = pct + '%';
+  }
+
+  // quest 为 { type, count, progress }（type 为怪种 key）或 null
+  function setQuest(quest) {
+    const el = root.document.getElementById('questTrack');
+    if (!quest) { el.style.display = 'none'; return; }
+    const name = root.MyWorld.MobsDef.TYPES[quest.type].name;
+    const done = quest.progress >= quest.count;
+    el.textContent = '击杀 ' + name + ' ' + Math.min(quest.progress, quest.count) + '/' + quest.count + (done ? '（回长老交付）' : '');
+    el.classList.toggle('done', done);
+    el.style.display = 'block';
+  }
+
+  function levelUpFlash() {
+    const el = root.document.getElementById('levelFlash');
+    el.style.opacity = '0.9';
+    root.setTimeout(() => { el.style.opacity = '0'; }, 500);
+  }
+
   // 世界空间伤害飘字（每帧由 update 投影到屏幕）
   function floatDamage(x, y, z, text, color) {
     const el = root.document.createElement('div');
@@ -47,5 +75,5 @@
   }
 
   root.MyWorld = root.MyWorld || {};
-  root.MyWorld.Hud = { setHp, flashRed, showDeath, floatDamage, update };
+  root.MyWorld.Hud = { setHp, flashRed, showDeath, floatDamage, update, setLevel, setXp, setQuest, levelUpFlash };
 })(typeof self !== 'undefined' ? self : globalThis);
