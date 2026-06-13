@@ -86,11 +86,6 @@
     return Math.hypot(msg.dx, msg.dy, msg.dz) > 1e-6;
   }
 
-  // 任务意图校验：无负载，仅防 null/非对象
-  function validQuestMsg(msg) {
-    return !!msg && typeof msg === 'object';
-  }
-
   root.MyWorld = root.MyWorld || {};
   root.MyWorld.Protocol = {
     INTEREST_CHUNKS, REACH, REACH_SLACK, MAX_HSPEED, MAX_VSPEED,
@@ -98,6 +93,6 @@
     MELEE_RANGE, MELEE_CD_MS, BOW_CD_MS, ARROW_SPEED, ARROW_GRAVITY, ARROW_LIFE_MS,
     INVULN_MS, REGEN_DELAY_MS, DEATH_RESPAWN_MS, MOB_TICK_MS, CAMP_ACTIVE_CHUNKS,
     KNOCKBACK_H, KNOCKBACK_V,
-    inInterest, validEdit, clampMove, sanitizeName, backoffMs, validAttack, validShoot, validQuestMsg,
+    inInterest, validEdit, clampMove, sanitizeName, backoffMs, validAttack, validShoot,
   };
 })(typeof self !== 'undefined' ? self : globalThis);

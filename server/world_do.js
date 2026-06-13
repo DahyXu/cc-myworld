@@ -7,10 +7,11 @@ import '../shared/protocol.js';
 import '../shared/physics.js';
 import '../shared/stats.js';
 import '../shared/mobs_def.js';
+import '../shared/quests_def.js';
 
 const MW = globalThis.MyWorld;
 const World = MW.World, P = MW.Protocol;
-const Physics = MW.Physics, Stats = MW.Stats, MobsDef = MW.MobsDef;
+const Physics = MW.Physics, Stats = MW.Stats, MobsDef = MW.MobsDef, QuestsDef = MW.QuestsDef;
 
 const SPAWN_X = MobsDef.SPAWN_X, SPAWN_Z = MobsDef.SPAWN_Z;
 const EYE = 1.62; // 与客户端 Player.EYE 一致（编辑距离校验用视点）
@@ -70,7 +71,11 @@ export class WorldDO {
         // 限速时钟取上次落盘时间：恢复的位置即彼时位置，位移预算 = 均速 × 实际经过时长；
         // 若取 Date.now()，唤醒 DO 的那条 move 自身 dt 会被压到 30ms 下限而被误拒拉回
         yaw: 0, pitch: 0, lastMoveMs: row && row.last_seen ? row.last_seen : Date.now() - 1000, visible: new Set(),
-        level: lvl, hp: row && isFinite(row.hp) && row.hp > 0 ? Math.min(row.hp, mhp) : mhp, maxHp: mhp,
+        level: lvl, xp: row && isFinite(row.xp) ? row.xp : 0,
+        questId: row ? row.quest_id : null,
+        questProg: row && isFinite(row.quest_progress) ? row.quest_progress : 0,
+        chainIndex: row && isFinite(row.chain_index) ? row.chain_index : 0,
+        hp: row && isFinite(row.hp) && row.hp > 0 ? Math.min(row.hp, mhp) : mhp, maxHp: mhp,
         dead: false, deadUntil: 0, invulnUntil: 0, lastHurtAt: 0, nextRegenAt: 0, atkReadyAt: 0, bowReadyAt: 0,
       };
       this.sessions.set(ws, s);
@@ -117,6 +122,8 @@ export class WorldDO {
     else if (msg.t === 'attack') this.onAttack(ws, s, msg);
     else if (msg.t === 'shoot') this.onShoot(ws, s, msg);
     else if (msg.t === 'respawn') this.onRespawn(ws, s);
+    else if (msg.t === 'questAccept') this.onQuestAccept(ws, s);
+    else if (msg.t === 'questTurnIn') this.onQuestTurnIn(ws, s);
     else if (msg.t === 'hello') this.onHello(ws, msg); // 重复 hello：按重新握手处理
   }
 
@@ -150,7 +157,11 @@ export class WorldDO {
     const maxHp = Stats.maxHp(level);
     const hp = row && isFinite(row.hp) && row.hp > 0 ? Math.min(row.hp, maxHp) : maxHp;
     const s = { pid: this.nextPid++, token, name, x, y, z, yaw: 0, pitch: 0, lastMoveMs: now, visible: new Set(),
-      level, hp, maxHp, dead: false, deadUntil: 0, invulnUntil: 0, lastHurtAt: 0, nextRegenAt: 0, atkReadyAt: 0, bowReadyAt: 0 };
+      level, xp: row && isFinite(row.xp) ? row.xp : 0,
+      questId: row ? row.quest_id : null,
+      questProg: row && isFinite(row.quest_progress) ? row.quest_progress : 0,
+      chainIndex: row && isFinite(row.chain_index) ? row.chain_index : 0,
+      hp, maxHp, dead: false, deadUntil: 0, invulnUntil: 0, lastHurtAt: 0, nextRegenAt: 0, atkReadyAt: 0, bowReadyAt: 0 };
     this.sessions.set(ws, s);
     // 休眠存活凭据：唤醒后 boot() 经 getWebSockets + attachment 恢复会话（pid 延续）
     ws.serializeAttachment({ token: s.token, pid: s.pid, name: s.name });
@@ -174,7 +185,9 @@ export class WorldDO {
     for (const m of this.mobs.values()) {
       if (!m.dead && P.inInterest(m.x, m.z, s.x, s.z)) mobs.push(this.mobSpawnMsg(m));
     }
-    this.send(ws, { t: 'welcome', pid: s.pid, seed: this.seed, x: s.x, y: s.y, z: s.z, edits, players, online: this.sessions.size, hp: s.hp, maxHp: s.maxHp, mobs });
+    const qstate = this.questStateMsg(s).quest;
+    this.send(ws, { t: 'welcome', pid: s.pid, seed: this.seed, x: s.x, y: s.y, z: s.z, edits, players, online: this.sessions.size,
+      hp: s.hp, maxHp: s.maxHp, level: s.level, xp: s.xp, xpNext: this.xpNext(s.level), quest: qstate, mobs });
     this.broadcastOnline();
     this.ctx.storage.setAlarm(Date.now() + P.PERSIST_INTERVAL_MS);
     this.ensureTick();
@@ -252,6 +265,28 @@ export class WorldDO {
     s.lastMoveMs = Date.now(); // 位置已权威重置，限速时钟同步归零，避免长闲置攒出超大位移预算
     this.send(ws, { t: 'teleport', x: s.x, y: s.y, z: s.z });
     this.syncVisibility(ws, s);
+  }
+
+  // NPC 邻近校验（位置上报有滞后，给 1 格余量）
+  nearNpc(s) {
+    return Math.hypot(s.x - QuestsDef.NPC_X, s.z - QuestsDef.NPC_Z) <= QuestsDef.NPC_RANGE + 1;
+  }
+
+  onQuestAccept(ws, s) {
+    if (s.dead || s.questId || !this.nearNpc(s)) return; // 已有任务/不在 NPC 旁：忽略
+    const q = QuestsDef.offer(s.chainIndex, s.level);
+    s.questId = q.id; s.questProg = 0;
+    this.send(ws, this.questStateMsg(s));
+  }
+
+  onQuestTurnIn(ws, s) {
+    if (s.dead || !s.questId || !this.nearNpc(s)) return;
+    const q = QuestsDef.parse(s.questId);
+    if (!q || s.questProg < q.count) return; // 未完成不可交付
+    this.gainXp(ws, s, q.reward);
+    if (q.kind === 'c') s.chainIndex++; // 链任务推进；日常不推进
+    s.questId = null; s.questProg = 0;
+    this.send(ws, this.questStateMsg(s)); // quest:null → 客户端隐藏追踪、NPC 转「可接」
   }
 
   // ====== M2 怪物模拟 ======
@@ -484,6 +519,51 @@ export class WorldDO {
     this.ensureTick();
   }
 
+  // xpNext：客户端经验条用；满级返回 0（条显示满格）
+  xpNext(level) {
+    const n = Stats.xpToNext(level);
+    return n === Infinity ? 0 : n;
+  }
+
+  // 当前任务状态消息（quest 为 {type,count,progress} 或 null）
+  questStateMsg(s) {
+    if (!s.questId) return { t: 'questState', quest: null };
+    const q = QuestsDef.parse(s.questId);
+    if (!q) return { t: 'questState', quest: null };
+    return { t: 'questState', quest: { type: q.type, count: q.count, progress: s.questProg } };
+  }
+
+  // 给玩家加经验，处理连升级（回满血+金光），下发 xpGain/levelUp
+  gainXp(ws, s, amount) {
+    const r = Stats.applyXp(s.level, s.xp, amount);
+    s.xp = r.xp;
+    if (r.leveled) {
+      s.level = r.level;
+      s.maxHp = Stats.maxHp(s.level);
+      s.hp = s.maxHp; // 升级回满血
+      this.send(ws, { t: 'levelUp', level: s.level, maxHp: s.maxHp, hp: s.hp });
+      for (const [ows, os] of this.sessions) {
+        if (os === s) continue;
+        if (P.inInterest(s.x, s.z, os.x, os.z)) this.send(ows, { t: 'pLevelUp', pid: s.pid, x: s.x, y: s.y, z: s.z });
+      }
+    }
+    this.send(ws, { t: 'xpGain', xp: s.xp, level: s.level, xpNext: this.xpNext(s.level) });
+  }
+
+  // 最后一击击杀结算：给经验 + 匹配怪种任务计数
+  grantKill(attacker, mob) {
+    const [ws, s] = this.sessionByPid(attacker.pid);
+    if (!s || s.dead) return; // 离线/不存在的射手：丢弃（无离线补偿，spec 接受）
+    this.gainXp(ws, s, MobsDef.mobStats(mob.type, mob.lv).xp);
+    if (s.questId) {
+      const q = QuestsDef.parse(s.questId);
+      if (q && q.type === mob.type && s.questProg < q.count) {
+        s.questProg++;
+        this.send(ws, this.questStateMsg(s));
+      }
+    }
+  }
+
   hurtMob(mob, dmg, attacker, now) {
     if (mob.state === 'return') return; // 回巢途中无敌（防风筝逃课，spec 明确）
     mob.hp -= dmg;
@@ -493,7 +573,7 @@ export class WorldDO {
       mob.hp = 0; mob.dead = true;
       mob.respawnAt = now + 30000; // 死后 30 秒原地重生
       this.broadcastMob(mob, { t: 'mobDie', id: mob.id });
-      // M3 在此结算经验与任务计数（最后一击归属 attacker.pid）
+      this.grantKill(attacker, mob); // 经验 + 任务计数（最后一击归属）
     } else {
       this.broadcastMob(mob, { t: 'mobHurt', id: mob.id, hp: mob.hp, dmg });
     }
@@ -581,8 +661,8 @@ export class WorldDO {
     const [ws] = this.sessionByPid(s.pid);
     if (s.hp <= 0) {
       s.hp = 0; s.dead = true; s.deadUntil = now + P.DEATH_RESPAWN_MS;
-      if (ws) this.send(ws, { t: 'playerDie' });
-      // M3 在此结算死亡经验惩罚
+      s.xp = Stats.xpAfterDeath(s.xp); // 扣当前等级进度 10%，不降级
+      if (ws) { this.send(ws, { t: 'playerDie' }); this.send(ws, { t: 'xpGain', xp: s.xp, level: s.level, xpNext: this.xpNext(s.level) }); }
     } else if (ws) {
       this.send(ws, { t: 'playerHurt', hp: s.hp, dmg });
     }
@@ -645,8 +725,8 @@ export class WorldDO {
     const px = s.dead ? SPAWN_X : s.x, pz = s.dead ? SPAWN_Z : s.z;
     const py = s.dead ? this.world.terrainHeight(8, 8) + 1 : s.y;
     const ph = s.dead ? s.maxHp : s.hp;
-    this.sql.exec(`UPDATE players SET x = ?, y = ?, z = ?, hp = ?, last_seen = ? WHERE token = ?`,
-      px, py, pz, ph, Date.now(), s.token);
+    this.sql.exec(`UPDATE players SET x = ?, y = ?, z = ?, hp = ?, level = ?, xp = ?, quest_id = ?, quest_progress = ?, chain_index = ?, last_seen = ? WHERE token = ?`,
+      px, py, pz, ph, s.level, s.xp, s.questId, s.questProg, s.chainIndex, Date.now(), s.token);
   }
 
   // 周期落盘（仅在线时续约下一次）

@@ -15,25 +15,6 @@
     return Math.floor(25 * Math.pow(level, 1.5));
   }
 
-  // 施加经验增益：xp 是当前等级内进度。逐级结算（可连升），满级吞没多余经验
-  // 返回 { level, xp, leveled }；leveled=true 表示本次至少升了一级
-  function applyXp(level, xp, gain) {
-    xp += gain;
-    let leveled = false;
-    while (level < LEVEL_CAP && xp >= xpToNext(level)) {
-      xp -= xpToNext(level);
-      level++;
-      leveled = true;
-    }
-    if (level >= LEVEL_CAP) xp = 0; // 满级不再积累进度
-    return { level, xp, leveled };
-  }
-
-  // 死亡惩罚：扣当前等级进度的 10%（向下取整的损失，不降级）
-  function xpAfterDeath(xp) {
-    return xp - Math.floor(xp * 0.1);
-  }
-
   root.MyWorld = root.MyWorld || {};
-  root.MyWorld.Stats = { LEVEL_CAP, maxHp, swordDamage, bowDamage, xpToNext, applyXp, xpAfterDeath };
+  root.MyWorld.Stats = { LEVEL_CAP, maxHp, swordDamage, bowDamage, xpToNext };
 })(typeof self !== 'undefined' ? self : globalThis);

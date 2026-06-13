@@ -79,11 +79,4 @@ assert.ok(!P.validShoot({ dx: 0, dy: 0, dz: 0 }));
 assert.ok(!P.validShoot({ dx: NaN, dy: 0, dz: 1 }));
 assert.ok(!P.validShoot(null));
 
-// 任务消息占位校验：只要求是对象（无负载）
-assert.ok(P.validQuestMsg({}));
-assert.ok(P.validQuestMsg({ t: 'questAccept' }));
-assert.ok(!P.validQuestMsg(null));
-assert.ok(!P.validQuestMsg('x'));
-assert.ok(!P.validQuestMsg(5));
-
 console.log('test_protocol OK');
