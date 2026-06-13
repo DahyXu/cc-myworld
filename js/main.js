@@ -328,7 +328,7 @@
     Hud.setLevel(m.level);
     Hud.levelUpFlash();
   });
-  Net.on('questState', (m) => { currentQuest = m.quest; Hud.setQuest(currentQuest); updateNpcMarker(); });
+  Net.on('questState', (m) => { currentQuest = m.quest; Hud.setQuest(currentQuest); updateNpcMarker(); if (UI.getOverlayMode() === 'npc') openNpcDialog(); });
   Net.on('pLevelUp', (m) => { Hud.floatDamage(m.x, m.y + 2.3, m.z, '⬆ 升级!', '#ffe066'); });
 
   // 起名表单
@@ -369,12 +369,12 @@
       desc.textContent = '长老有任务给你。接受后去讨伐怪物吧。';
       act.textContent = '接受任务';
       act.style.display = '';
-      act.onclick = () => { Net.send({ t: 'questAccept' }); closeNpcDialog(); };
+      act.onclick = (e) => { e.stopPropagation(); Net.send({ t: 'questAccept' }); closeNpcDialog(); };
     } else if (currentQuest.progress >= currentQuest.count) {
       desc.textContent = '任务完成！交付领取经验奖励。';
       act.textContent = '交付任务';
       act.style.display = '';
-      act.onclick = () => { Net.send({ t: 'questTurnIn' }); closeNpcDialog(); };
+      act.onclick = (e) => { e.stopPropagation(); Net.send({ t: 'questTurnIn' }); closeNpcDialog(); };
     } else {
       const name = MW.MobsDef.TYPES[currentQuest.type].name;
       desc.textContent = '任务进行中：击杀 ' + name + ' ' + currentQuest.progress + '/' + currentQuest.count + '，完成后回来交付。';
