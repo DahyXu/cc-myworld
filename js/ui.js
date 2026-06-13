@@ -44,11 +44,11 @@
     root.document.getElementById('overlay').style.display = show ? 'flex' : 'none';
   }
 
-  // 遮罩内容模式：connecting | name | start | file | replaced
+  // 遮罩内容模式：connecting | name | start | file | replaced | npc
   let overlayMode = 'connecting';
   function setOverlayMode(mode) {
     overlayMode = mode;
-    const ids = { connecting: 'ovConnecting', name: 'ovName', start: 'ovStart', file: 'ovFile', replaced: 'ovReplaced' };
+    const ids = { connecting: 'ovConnecting', name: 'ovName', start: 'ovStart', file: 'ovFile', replaced: 'ovReplaced', npc: 'ovNpc' };
     for (const k in ids) {
       root.document.getElementById(ids[k]).style.display = (k === mode ? 'block' : 'none');
     }

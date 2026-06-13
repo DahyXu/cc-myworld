@@ -61,6 +61,12 @@
     border: 1px solid #7ec850; background: #2c4a1e; color: #cdf0b0; cursor: pointer;
   }
   #ovName button:hover { background: #3a6128; }
+  #ovNpc button {
+    font: 15px sans-serif; margin: 0 6px; padding: 7px 16px; border-radius: 4px;
+    border: 1px solid #7ec850; background: #2c4a1e; color: #cdf0b0; cursor: pointer;
+  }
+  #ovNpc button:hover { background: #3a6128; }
+  #ovNpc #npcCloseBtn { border-color: #888; background: #333; color: #ddd; }
   kbd {
     background: #333; border: 1px solid #666; border-bottom-width: 2px;
     border-radius: 3px; padding: 1px 6px; font-size: 12px;
@@ -162,6 +168,13 @@
     <div id="ovReplaced" style="display:none">
       <p>这个世界已在另一个窗口打开。</p>
       <p>同一浏览器共用一个身份：先关闭其他窗口，<br>再刷新本页继续游戏。</p>
+    </div>
+    <div id="ovNpc" style="display:none">
+      <p id="npcDesc">…</p>
+      <p>
+        <button id="npcActBtn">接受</button>
+        <button id="npcCloseBtn">关闭</button>
+      </p>
     </div>
   </div>
 </div>
