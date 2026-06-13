@@ -122,8 +122,8 @@ export class WorldDO {
     else if (msg.t === 'attack') this.onAttack(ws, s, msg);
     else if (msg.t === 'shoot') this.onShoot(ws, s, msg);
     else if (msg.t === 'respawn') this.onRespawn(ws, s);
-    else if (msg.t === 'questAccept') this.onQuestAccept(ws, s);
-    else if (msg.t === 'questTurnIn') this.onQuestTurnIn(ws, s);
+    else if (msg.t === 'questAccept') { if (P.validQuestMsg(msg)) this.onQuestAccept(ws, s); }
+    else if (msg.t === 'questTurnIn') { if (P.validQuestMsg(msg)) this.onQuestTurnIn(ws, s); }
     else if (msg.t === 'hello') this.onHello(ws, msg); // 重复 hello：按重新握手处理
   }
 
