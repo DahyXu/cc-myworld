@@ -86,7 +86,7 @@ export class WorldDO {
         level: lvl, xp: row && isFinite(row.xp) ? row.xp : 0,
         questId: row ? row.quest_id : null,
         questProg: row && isFinite(row.quest_progress) ? row.quest_progress : 0,
-        chainIndex: row && isFinite(row.chain_index) ? row.chain_index : 0,
+        mainIndex: row && isFinite(row.chain_index) ? row.chain_index : 0,
         hp: row && isFinite(row.hp) && row.hp > 0 ? Math.min(row.hp, mhp) : mhp, maxHp: mhp,
         dead: false, deadUntil: 0, invulnUntil: 0, lastHurtAt: 0, nextRegenAt: 0, atkReadyAt: 0, bowReadyAt: 0,
       };
@@ -198,10 +198,14 @@ export class WorldDO {
       level, xp: row && isFinite(row.xp) ? row.xp : 0,
       questId: row ? row.quest_id : null,
       questProg: row && isFinite(row.quest_progress) ? row.quest_progress : 0,
-      chainIndex: row && isFinite(row.chain_index) ? row.chain_index : 0,
+      mainIndex: row && isFinite(row.chain_index) ? row.chain_index : 0,
       coins: row && isFinite(row.coins) ? row.coins : 0,
       hp, maxHp, dead: false, deadUntil: 0, invulnUntil: 0, lastHurtAt: 0, nextRegenAt: 0, atkReadyAt: 0, bowReadyAt: 0 };
     this.sessions.set(ws, s);
+    // 旧版 'c:...' quest id 在新版 parse 中返回 null，清除避免卡死接任务入口
+    if (s.questId && !QuestsDef.parse(s.questId)) {
+      s.questId = null; s.questProg = 0;
+    }
     s.inv = new Array(40).fill(null);
     const invRows = this.sql.exec(`SELECT slot, item FROM inventory WHERE pid = ?`, token).toArray();
     if (invRows.length > 0) {
@@ -268,6 +272,17 @@ export class WorldDO {
     if (isFinite(msg.pitch)) s.pitch = msg.pitch;
     this.syncVisibility(ws, s);
     this.ensureTick(); // 玩家移动可能令新营地进入激活半径
+    // 探索任务：检测水平距离是否达标，自动完成进度
+    if (s.questId && s.questProg === 0) {
+      const q = QuestsDef.parse(s.questId);
+      if (q && q.kind === 'm' && q.questKind === 'explore') {
+        const dist = Math.hypot(s.x - SPAWN_X, s.z - SPAWN_Z);
+        if (dist >= q.count) {
+          s.questProg = 1;
+          this.send(ws, this.questStateMsg(s));
+        }
+      }
+    }
   }
 
   // 重算 s 与所有人的互见关系；保持可见者收 pmove
@@ -457,7 +472,8 @@ export class WorldDO {
 
   onQuestAccept(ws, s) {
     if (s.dead || s.questId || !this.nearNpc(s)) return; // 已有任务/不在 NPC 旁：忽略
-    const q = QuestsDef.offer(s.chainIndex, s.level);
+    const q = QuestsDef.offer(s.mainIndex, s.level);
+    if (!q) return; // 等级不足
     s.questId = q.id; s.questProg = 0;
     this.send(ws, this.questStateMsg(s));
   }
@@ -465,11 +481,41 @@ export class WorldDO {
   onQuestTurnIn(ws, s) {
     if (s.dead || !s.questId || !this.nearNpc(s)) return;
     const q = QuestsDef.parse(s.questId);
-    if (!q || s.questProg < q.count) return; // 未完成不可交付
-    this.gainXp(ws, s, q.reward);
-    if (q.kind === 'c') s.chainIndex++; // 链任务推进；日常不推进
+    if (!q) return;
+
+    if (q.kind === 'm' && q.questKind === 'collect') {
+      // collect：校验并扣除背包中的材料
+      let have = 0;
+      for (const it of s.inv) {
+        if (it && it.type === 'material' && it.sub === q.type) have += (it.qty || 1);
+      }
+      if (have < q.count) return;
+      let toRemove = q.count;
+      const changes = [];
+      for (let i = 0; i < 40 && toRemove > 0; i++) {
+        const it = s.inv[i];
+        if (!it || it.type !== 'material' || it.sub !== q.type) continue;
+        const take = Math.min(it.qty || 1, toRemove);
+        it.qty = (it.qty || 1) - take; toRemove -= take;
+        if (it.qty <= 0) s.inv[i] = null;
+        changes.push({ slot: i, item: s.inv[i] });
+      }
+      if (changes.length > 0) this.send(ws, { t: 'inv_delta', changes });
+    } else {
+      // kill/boss/explore/daily：检查进度
+      if (s.questProg < q.count) return;
+    }
+
+    // 奖励
+    this.gainXp(ws, s, q.xpReward || q.reward || 0);
+    if (q.coins > 0) this.gainCoins(ws, s, q.coins);
+    if (q.item) this.gainItems(ws, s, [Object.assign({}, q.item)]);
+
+    // 推进索引
+    if (q.kind === 'm') s.mainIndex++;
     s.questId = null; s.questProg = 0;
-    this.send(ws, this.questStateMsg(s)); // quest:null → 客户端隐藏追踪、NPC 转「可接」
+    this.send(ws, this.questStateMsg(s));
+    this.persistSession(s);
   }
 
   // ====== M2 怪物模拟 ======
@@ -872,7 +918,7 @@ export class WorldDO {
     if (!s.questId) return { t: 'questState', quest: null };
     const q = QuestsDef.parse(s.questId);
     if (!q) return { t: 'questState', quest: null };
-    return { t: 'questState', quest: { type: q.type, count: q.count, progress: s.questProg } };
+    return { t: 'questState', quest: { type: q.type, count: q.count, progress: s.questProg, questKind: q.questKind } };
   }
 
   // 给玩家加经验，处理连升级（回满血+金光），下发 xpGain/levelUp
@@ -1135,7 +1181,7 @@ export class WorldDO {
     const py = s.dead ? this.world.terrainHeight(8, 8) + 1 : s.y;
     const ph = s.dead ? s.maxHp : s.hp;
     this.sql.exec(`UPDATE players SET x = ?, y = ?, z = ?, hp = ?, level = ?, xp = ?, quest_id = ?, quest_progress = ?, chain_index = ?, coins = ?, last_seen = ? WHERE token = ?`,
-      px, py, pz, ph, s.level, s.xp, s.questId, s.questProg, s.chainIndex, s.coins || 0, Date.now(), s.token);
+      px, py, pz, ph, s.level, s.xp, s.questId, s.questProg, s.mainIndex, s.coins || 0, Date.now(), s.token);
     this.saveInventory(s);
   }
 
