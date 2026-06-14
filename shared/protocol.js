@@ -91,6 +91,25 @@
     return !!msg && typeof msg === 'object';
   }
 
+  // —— 背包常量与校验 ——
+  const INV_SLOTS = 40; // 0-29 backpack, 30-39 hotbar
+
+  function validInvArrange(msg) {
+    return !!(msg && Array.isArray(msg.slots) && msg.slots.length === INV_SLOTS);
+  }
+  function validBuy(msg) {
+    return !!(msg && (msg.sub === 'sword' || msg.sub === 'bow') &&
+      (msg.tier === 1 || msg.tier === 2 || msg.tier === 3));
+  }
+  function validSell(msg) {
+    const VALID = ['slime_gel', 'zombie_rags', 'skeleton_bone', 'wolf_fang'];
+    return !!(msg && VALID.indexOf(msg.sub) >= 0 &&
+      Number.isInteger(msg.qty) && msg.qty > 0 && msg.qty <= 640);
+  }
+  function validEnhance(msg) {
+    return !!(msg && Number.isInteger(msg.slot) && msg.slot >= 0 && msg.slot < INV_SLOTS);
+  }
+
   root.MyWorld = root.MyWorld || {};
   root.MyWorld.Protocol = {
     INTEREST_CHUNKS, REACH, REACH_SLACK, MAX_HSPEED, MAX_VSPEED,
@@ -98,6 +117,7 @@
     MELEE_RANGE, MELEE_CD_MS, BOW_CD_MS, ARROW_SPEED, ARROW_GRAVITY, ARROW_LIFE_MS,
     INVULN_MS, REGEN_DELAY_MS, DEATH_RESPAWN_MS, MOB_TICK_MS, CAMP_ACTIVE_CHUNKS,
     KNOCKBACK_H, KNOCKBACK_V,
+    INV_SLOTS, validInvArrange, validBuy, validSell, validEnhance,
     inInterest, validEdit, clampMove, sanitizeName, backoffMs, validAttack, validShoot, validQuestMsg,
   };
 })(typeof self !== 'undefined' ? self : globalThis);
