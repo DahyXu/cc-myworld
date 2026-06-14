@@ -47,7 +47,8 @@
     }
     if (rng() < d.coinRate) {
       const base = d.coinMin + Math.floor(rng() * (d.coinMax - d.coinMin + 1));
-      result.coins = base + Math.floor(base * (lv - 1) * 0.1);
+      const safeLv = Math.max(1, lv || 1);
+      result.coins = base + Math.floor(base * (safeLv - 1) * 0.1);
     }
     const wd = WEAPON_DROP[type];
     if (wd && rng() < wd.rate) {
