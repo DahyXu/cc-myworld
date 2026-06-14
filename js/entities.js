@@ -357,7 +357,7 @@
       ctx.font = 'bold 22px sans-serif';
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       const m2 = Math.floor(sec / 60), s2 = sec % 60;
-      ctx.fillText((name || id) + ' ' + m2 + ':' + String(s2).padStart(2, '0') + '后复活', 128, 32);
+      ctx.fillText((name || id) + ' ' + String(m2).padStart(2, '0') + ':' + String(s2).padStart(2, '0') + '后复活', 128, 32);
       const tex = new root.THREE.CanvasTexture(cv);
       const sp = new root.THREE.Sprite(new root.THREE.SpriteMaterial({ map: tex, depthTest: false }));
       sp.scale.set(4, 1, 1);
