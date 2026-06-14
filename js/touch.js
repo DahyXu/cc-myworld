@@ -3,7 +3,7 @@
   'use strict';
 
   const JOYSTICK_RADIUS = 60; // px，摇杆最大偏移半径
-  const LOOK_SENS = 0.003;    // rad/px，与桌面 mousemove 系数一致
+  const LOOK_SENS = 0.006;    // rad/px，移动端手指滑动灵敏度
 
   // 摇杆状态（浮动：落指位置为圆心）
   const joy = { active: false, id: -1, cx: 0, cy: 0, dx: 0, dy: 0 };
