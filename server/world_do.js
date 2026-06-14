@@ -9,11 +9,13 @@ import '../shared/stats.js';
 import '../shared/mobs_def.js';
 import '../shared/quests_def.js';
 import '../shared/items_def.js';
+import '../shared/bosses_def.js';
 
 const MW = globalThis.MyWorld;
 const World = MW.World, P = MW.Protocol;
 const Physics = MW.Physics, Stats = MW.Stats, MobsDef = MW.MobsDef, QuestsDef = MW.QuestsDef;
 const ItemsDef = MW.ItemsDef;
+const BossesDef = MW.BossesDef;
 
 const SPAWN_X = MobsDef.SPAWN_X, SPAWN_Z = MobsDef.SPAWN_Z;
 const EYE = 1.62; // 与客户端 Player.EYE 一致（编辑距离校验用视点）
@@ -30,6 +32,7 @@ export class WorldDO {
     this.activeCamps = new Map(); // campKey "ccx_ccz" -> { camp, mobIds: [] }
     this.arrows = new Map();      // arrowId -> arrow
     this.nextArrowId = 1;
+    this.bosses = new Map();
     this.tickTimer = null;
     this.idleTicks = 0;
     this.ctx.blockConcurrencyWhile(async () => { this.boot(); });
@@ -110,6 +113,23 @@ export class WorldDO {
     if (this.sessions.size > 0) this.ctx.storage.setAlarm(Date.now() + P.PERSIST_INTERVAL_MS);
     // 休眠唤醒后若恢复了会话，立即恢复游戏 tick（否则纯挂机客户端旁的营地不会复活）
     if (this.sessions.size > 0) this.ensureTick();
+    // Boss 运行时初始化（DO 重启后立即复活）
+    for (const def of BossesDef.BOSSES) {
+      this.world.ensureChunk(Math.floor(def.x / 16), Math.floor(def.z / 16));
+      const t = MobsDef.TYPES[def.type];
+      const by = this.world.terrainHeight(Math.floor(def.x), Math.floor(def.z)) + 1;
+      this.bosses.set(def.id, {
+        def,
+        x: def.x, y: by, z: def.z,
+        half: t.half, height: t.height,
+        vx: 0, vy: 0, vz: 0, onGround: true,
+        hp: def.hp, maxHp: def.hp,
+        dead: false, respawnAt: 0,
+        aggroPid: null, atkReadyAt: 0,
+        splitDone: false, summonedIds: [],
+        lastAoeAt: 0, lastSummonAt: 0,
+      });
+    }
   }
 
   async fetch(request) {
@@ -219,6 +239,17 @@ export class WorldDO {
     this.send(ws, { t: 'welcome', pid: s.pid, seed: this.seed, x: s.x, y: s.y, z: s.z, edits, players, online: this.sessions.size,
       hp: s.hp, maxHp: s.maxHp, level: s.level, xp: s.xp, xpNext: this.xpNext(s.level), quest: qstate, mobs });
     this.send(ws, { t: 'inv_state', coins: s.coins, slots: s.inv });
+    const bossStates = [];
+    for (const [bid, boss] of this.bosses) {
+      bossStates.push({
+        id: bid, name: boss.def.name, type: boss.def.type,
+        x: boss.x, y: boss.y, z: boss.z,
+        hp: boss.hp, maxHp: boss.maxHp,
+        alive: !boss.dead,
+        respawnIn: boss.dead ? Math.max(0, Math.floor((boss.respawnAt - Date.now()) / 1000)) : 0,
+      });
+    }
+    this.send(ws, { t: 'bossState', bosses: bossStates });
     this.broadcastOnline();
     this.ctx.storage.setAlarm(Date.now() + P.PERSIST_INTERVAL_MS);
     this.ensureTick();
@@ -526,6 +557,18 @@ export class WorldDO {
     }
   }
 
+  broadcastBoss(boss, msg) {
+    for (const [ws, s] of this.sessions) {
+      if (P.inInterest(boss.x, boss.z, s.x, s.z)) this.send(ws, msg);
+    }
+  }
+
+  bossSpawnMsg(boss) {
+    const def = boss.def;
+    return { t: 'bossSpawn', id: def.id, name: def.name, type: def.type,
+      x: boss.x, y: boss.y, z: boss.z, hp: boss.hp, maxHp: boss.maxHp };
+  }
+
   // 兴趣内最近的存活玩家
   nearestPlayer(mob) {
     let best = null;
@@ -552,6 +595,10 @@ export class WorldDO {
     for (const mob of this.mobs.values()) {
       busy = true;
       this.tickMob(mob, now);
+    }
+    for (const boss of this.bosses.values()) {
+      busy = true;
+      this.tickBoss(boss, now);
     }
     this.tickArrows(now);
     if (this.arrows.size > 0) busy = true;
@@ -638,6 +685,141 @@ export class WorldDO {
     }
   }
 
+  tickBoss(boss, now) {
+    const dt = P.MOB_TICK_MS / 1000;
+    const def = boss.def;
+    const t = MobsDef.TYPES[def.type];
+
+    if (boss.dead) {
+      if (now >= boss.respawnAt) {
+        boss.hp = boss.maxHp; boss.dead = false;
+        boss.x = def.x; boss.z = def.z;
+        boss.y = this.world.terrainHeight(Math.floor(def.x), Math.floor(def.z)) + 1;
+        boss.vx = boss.vy = boss.vz = 0;
+        boss.splitDone = false; boss.summonedIds = [];
+        boss.lastAoeAt = 0; boss.lastSummonAt = 0;
+        this.broadcastBoss(boss, this.bossSpawnMsg(boss));
+        for (const ws2 of this.sessions.keys()) {
+          this.send(ws2, { t: 'bossRespawn', id: def.id });
+        }
+      }
+      return;
+    }
+
+    // 寻找兴趣内最近存活玩家（视野20格）
+    let near = null;
+    for (const s of this.sessions.values()) {
+      if (s.dead) continue;
+      const d = Math.hypot(s.x - boss.x, s.z - boss.z);
+      if (d <= 20 * 2 + 8 && (!near || d < near.dist)) {
+        near = { dist: d, pid: s.pid, x: s.x, y: s.y, z: s.z };
+      }
+    }
+
+    // 移动
+    let tx = null, tz = null, speedMul = 1;
+    if (near && near.dist <= 20) {
+      if (def.skill === 'dash' && near.dist > 5) speedMul = 3;
+      if (!t.ranged) {
+        tx = near.x; tz = near.z;
+      } else {
+        if (near.dist < t.keepMin) { tx = boss.x + (boss.x - near.x); tz = boss.z + (boss.z - near.z); }
+        else if (near.dist > t.keepMax) { tx = near.x; tz = near.z; }
+      }
+    }
+
+    if (tx != null) {
+      const dx = tx - boss.x, dz = tz - boss.z;
+      const len = Math.hypot(dx, dz);
+      if (len > 0.05) {
+        boss.vx = dx / len * def.speed * speedMul;
+        boss.vz = dz / len * def.speed * speedMul;
+        boss.yaw = Math.atan2(-boss.vx, -boss.vz);
+        if (boss.onGround && Physics.blockedAhead(boss, this.world, dx, dz)) Physics.tryJump(boss, 10);
+      } else { boss.vx = 0; boss.vz = 0; }
+    } else { boss.vx = 0; boss.vz = 0; }
+
+    const px = boss.x, py = boss.y, pz = boss.z;
+    Physics.step(boss, this.world, dt);
+    if (boss.y < -10) {
+      boss.x = def.x; boss.z = def.z;
+      boss.y = this.world.terrainHeight(Math.floor(def.x), Math.floor(def.z)) + 1;
+      boss.vx = boss.vy = boss.vz = 0;
+    }
+
+    // 攻击
+    if (near && now >= boss.atkReadyAt) {
+      if (!t.ranged && near.dist <= t.atkRange) {
+        boss.atkReadyAt = now + t.atkCdMs;
+        const [, victim] = this.sessionByPid(near.pid);
+        if (victim) this.damagePlayer(victim, def.dmg, now);
+      } else if (t.ranged && near.dist >= t.keepMin && near.dist <= t.keepMax) {
+        boss.atkReadyAt = now + t.atkCdMs;
+        const [, victim] = this.sessionByPid(near.pid);
+        if (victim) this.spawnArrow(
+          boss.x, boss.y + boss.height * 0.8, boss.z,
+          victim.x - boss.x, victim.y + 1.4 - (boss.y + boss.height * 0.8), victim.z - boss.z,
+          0, def.dmg);
+      }
+    }
+
+    // 技能：分裂（史莱姆王）
+    if (def.skill === 'split' && !boss.splitDone && boss.hp <= boss.maxHp / 2) {
+      boss.splitDone = true;
+      for (let i = 0; i < 2; i++) {
+        const ang = (i / 2) * Math.PI * 2;
+        const mx = boss.x + Math.cos(ang) * 3, mz = boss.z + Math.sin(ang) * 3;
+        const my = this.world.terrainHeight(Math.floor(mx), Math.floor(mz)) + 1;
+        const ts = MobsDef.TYPES['slime'];
+        const mob = Physics.createBody(mx, my, mz, ts.half, ts.height);
+        const sid = 'bsplit_' + now + '_' + i;
+        Object.assign(mob, {
+          id: sid, type: 'slime', lv: 3, hp: 36, maxHp: 36, dmg: 2, xp: 0,
+          speed: ts.speed, yaw: 0, state: 'idle', aggroPid: null, atkReadyAt: 0,
+          dead: false, respawnAt: 0, wanderUntil: 0, tx: mx, tz: mz, campX: mx, campZ: mz, key: 'boss_split',
+        });
+        this.mobs.set(sid, mob);
+        this.broadcastMob(mob, this.mobSpawnMsg(mob));
+      }
+    }
+
+    // 技能：腐化之气（僵尸领主）
+    if (def.skill === 'aoe' && now - boss.lastAoeAt >= 10000) {
+      boss.lastAoeAt = now;
+      for (const [, s] of this.sessions) {
+        if (s.dead) continue;
+        if (Math.hypot(s.x - boss.x, s.z - boss.z) <= 3) this.damagePlayer(s, 4, now);
+      }
+    }
+
+    // 技能：召唤骷髅（骷髅法师）
+    if (def.skill === 'summon' && now - boss.lastSummonAt >= 30000) {
+      boss.lastSummonAt = now;
+      for (let i = 0; i < 2; i++) {
+        const ang = (i / 2) * Math.PI * 2;
+        const mx = boss.x + Math.cos(ang) * 4, mz = boss.z + Math.sin(ang) * 4;
+        const my = this.world.terrainHeight(Math.floor(mx), Math.floor(mz)) + 1;
+        const tk = MobsDef.TYPES['skeleton'];
+        const st = MobsDef.mobStats('skeleton', 8);
+        const mob = Physics.createBody(mx, my, mz, tk.half, tk.height);
+        const kid = 'bsummon_' + now + '_' + i;
+        Object.assign(mob, {
+          id: kid, type: 'skeleton', lv: 8, hp: st.hp, maxHp: st.hp, dmg: st.dmg, xp: 0,
+          speed: tk.speed, yaw: 0, state: 'idle', aggroPid: null, atkReadyAt: 0,
+          dead: false, respawnAt: 0, wanderUntil: 0, tx: mx, tz: mz, campX: mx, campZ: mz, key: 'boss_summon',
+        });
+        this.mobs.set(kid, mob);
+        boss.summonedIds.push(kid);
+        this.broadcastMob(mob, this.mobSpawnMsg(mob));
+      }
+    }
+
+    // 位置广播
+    if (Math.abs(boss.x - px) + Math.abs(boss.y - py) + Math.abs(boss.z - pz) > 0.001) {
+      this.broadcastBoss(boss, { t: 'bossMove', id: def.id, x: boss.x, y: boss.y, z: boss.z, yaw: boss.yaw || 0 });
+    }
+  }
+
   // ====== M2 战斗结算 ======
 
   // 近战：服务器复核冷却与射程后结算（客户端预选目标只是意图）
@@ -646,19 +828,23 @@ export class WorldDO {
     const now = Date.now();
     if (now < s.atkReadyAt) return;
     const mob = this.mobs.get(msg.id);
-    if (!mob || mob.dead) return;
+    const boss = mob ? null : this.bosses.get(msg.id);
+    if (!mob && !boss) return;
+    if (mob && mob.dead) return;
+    if (boss && boss.dead) return;
+    const target = mob || boss;
     const ex = s.x, ey = s.y + EYE, ez = s.z;
-    const d = Math.hypot(mob.x - ex, mob.y + mob.height / 2 - ey, mob.z - ez);
-    if (d > P.MELEE_RANGE + 1) return; // 位置上报滞后留 1 格余量
+    const d = Math.hypot(target.x - ex, target.y + target.height / 2 - ey, target.z - ez);
+    if (d > P.MELEE_RANGE + 1) return;
     s.atkReadyAt = now + P.MELEE_CD_MS;
-    // 击退：水平远离攻击者 + 小幅上抛
-    const kx = mob.x - s.x, kz = mob.z - s.z;
+    const kx = target.x - s.x, kz = target.z - s.z;
     const kl = Math.hypot(kx, kz) || 1;
-    mob.vx += kx / kl * P.KNOCKBACK_H; mob.vz += kz / kl * P.KNOCKBACK_H;
-    if (mob.onGround) mob.vy = P.KNOCKBACK_V;
+    if (mob) { mob.vx += kx / kl * P.KNOCKBACK_H; mob.vz += kz / kl * P.KNOCKBACK_H; if (mob.onGround) mob.vy = P.KNOCKBACK_V; }
     const sw = (s.inv && Number.isInteger(msg.slot)) ? s.inv[30 + msg.slot] : null;
     const swordMul = (sw && sw.type === 'weapon' && sw.sub === 'sword') ? ItemsDef.weaponMul(sw.tier, sw.enh) : 1;
-    this.hurtMob(mob, Math.floor(Stats.swordDamage(s.level) * swordMul), s, now);
+    const dmg = Math.floor(Stats.swordDamage(s.level) * swordMul);
+    if (mob) this.hurtMob(mob, dmg, s, now);
+    else this.hurtBoss(boss, dmg, ws, s, now);
     this.ensureTick();
   }
 
@@ -738,6 +924,49 @@ export class WorldDO {
     }
   }
 
+  hurtBoss(boss, dmg, ws, s, now) {
+    if (boss.dead) return;
+    boss.hp -= dmg;
+    boss.aggroPid = s.pid;
+    if (boss.hp <= 0) {
+      boss.hp = 0; boss.dead = true;
+      boss.respawnAt = now + boss.def.respawnMs;
+      // 清除召唤物（骷髅法师）
+      for (const mid of boss.summonedIds) {
+        const m = this.mobs.get(mid);
+        if (m && !m.dead) { this.broadcastMob(m, { t: 'mobDie', id: m.id }); this.mobs.delete(mid); }
+      }
+      boss.summonedIds = [];
+      this.broadcastBoss(boss, { t: 'bossDie', id: boss.def.id, respawnIn: Math.floor(boss.def.respawnMs / 1000) });
+      for (const ws2 of this.sessions.keys()) {
+        this.send(ws2, { t: 'bossDied', id: boss.def.id, respawnIn: Math.floor(boss.def.respawnMs / 1000) });
+      }
+      this.grantBossKill(ws, s, boss);
+    } else {
+      this.broadcastBoss(boss, { t: 'bossHurt', id: boss.def.id, hp: boss.hp, maxHp: boss.maxHp, dmg });
+    }
+  }
+
+  grantBossKill(ws, s, boss) {
+    this.gainXp(ws, s, boss.def.xp);
+    this.gainCoins(ws, s, boss.def.coins);
+    this.gainItems(ws, s, [Object.assign({}, boss.def.loot)]);
+    if (s.questId) {
+      const q = QuestsDef.parse(s.questId);
+      if (q && q.kind === 'm' && q.questKind === 'boss' && q.type === boss.def.id && s.questProg < q.count) {
+        s.questProg++;
+        this.send(ws, this.questStateMsg(s));
+      }
+    }
+    // 其他附近玩家：30%经验分成
+    for (const [ows, os] of this.sessions) {
+      if (os.pid === s.pid) continue;
+      if (P.inInterest(boss.x, boss.z, os.x, os.z)) {
+        this.gainXp(ows, os, Math.floor(boss.def.xp * 0.3));
+      }
+    }
+  }
+
   // ownerPid>0 为玩家箭（只打怪），0 为怪物箭（只打玩家）
   spawnArrow(x, y, z, dx, dy, dz, ownerPid, dmg) {
     const len = Math.hypot(dx, dy, dz) || 1;
@@ -788,6 +1017,17 @@ export class WorldDO {
             this.hurtMob(mob, a.dmg, atk || { pid: a.own }, now);
             hit = { x: bx, y: by, z: bz };
             break;
+          }
+        }
+        if (!hit) {
+          for (const boss of this.bosses.values()) {
+            if (boss.dead) continue;
+            if (Physics.segmentHitsBox(x0, y0, z0, bx, by, bz, boss)) {
+              const [ws2, atk] = this.sessionByPid(a.own);
+              if (atk) this.hurtBoss(boss, a.dmg, ws2, atk, now);
+              hit = { x: bx, y: by, z: bz };
+              break;
+            }
           }
         }
       } else {
