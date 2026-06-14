@@ -33,6 +33,10 @@
   // ── Canvas 触控（摇杆 + 视角） ──
   function onTouchStart(e) {
     e.preventDefault();
+    // 校正僵死状态：若之前的 touch 已不在活跃列表（touchend 被漏掉），立即清理
+    const activeIds = new Set([...e.touches].map(t => t.identifier));
+    if (joy.active  && !activeIds.has(joy.id))  { joy.active  = false; joy.dx = 0; joy.dy = 0; syncJoystickDOM(); }
+    if (look.active && !activeIds.has(look.id)) { look.active = false; }
     for (const t of e.changedTouches) {
       if (t.target && t.target.closest && t.target.closest('button, [data-slot], #overlay')) continue;
       if (isLeftHalf(t.clientX) && !joy.active) {
