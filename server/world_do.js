@@ -280,6 +280,7 @@ export class WorldDO {
         if (dist >= q.count) {
           s.questProg = 1;
           this.send(ws, this.questStateMsg(s));
+          this.persistSession(s);
         }
       }
     }
