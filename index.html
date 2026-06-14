@@ -2,6 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
 <title>我的世界 - 网页版</title>
 <style>
   html, body { margin: 0; padding: 0; overflow: hidden; height: 100%; background: #000; }
@@ -18,10 +19,12 @@
   #crosshair::before { left: 9px; top: 0; width: 2px; height: 20px; }
   #crosshair::after { left: 0; top: 9px; width: 20px; height: 2px; }
   /* 快捷栏 */
-  #hotbar {
+  #hotbarWrap {
     position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%);
-    display: flex; gap: 4px; z-index: 10; pointer-events: none;
+    display: flex; align-items: center; gap: 4px; z-index: 10; pointer-events: none;
   }
+  #hotbar { display: flex; gap: 4px; }
+  #hotbarPrev, #hotbarNext { display: none; }
   .slot {
     width: 48px; height: 48px; position: relative;
     background: rgba(0,0,0,0.45); border: 2px solid #888; border-radius: 4px;
@@ -128,11 +131,54 @@
     align-items: center; justify-content: center; color: #fff;
     background: #222; font: 16px sans-serif;
   }
+  /* ── 移动端 ── */
+  body.mobile #hotbarPrev,
+  body.mobile #hotbarNext {
+    display: flex; align-items: center; justify-content: center;
+    width: 28px; height: 44px; background: rgba(0,0,0,0.5);
+    border: 1px solid #888; border-radius: 4px; color: #fff; font-size: 18px;
+    pointer-events: auto; touch-action: manipulation; cursor: pointer;
+  }
+  body.mobile #hotbar { pointer-events: auto; }
+  body.mobile .slot   { touch-action: manipulation; pointer-events: auto; }
+  #orientWarn {
+    display: none; position: fixed; inset: 0; z-index: 40;
+    background: #111; color: #eee; font: 22px sans-serif;
+    align-items: center; justify-content: center; text-align: center;
+    padding: 20px;
+  }
+  @media (orientation: portrait) { body.mobile #orientWarn { display: flex; } }
+  #mobileControls {
+    display: none; position: fixed; inset: 0; z-index: 11; pointer-events: none;
+  }
+  body.mobile #mobileControls { display: block; }
+  #joystickBase {
+    position: fixed; width: 120px; height: 120px; border-radius: 50%;
+    background: rgba(255,255,255,0.08); border: 2px solid rgba(255,255,255,0.3);
+    pointer-events: none;
+  }
+  #joystickKnob {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    width: 48px; height: 48px; border-radius: 50%; background: rgba(255,255,255,0.5);
+  }
+  #btnAttack, #btnPlace, #btnJump, #btnE {
+    position: fixed; display: flex; align-items: center; justify-content: center;
+    font: bold 13px sans-serif; color: #fff; border: none;
+    user-select: none; -webkit-user-select: none; touch-action: none; pointer-events: auto;
+  }
+  #btnAttack { width:56px; height:56px; background:rgba(200,50,50,0.85);  border-radius:50%;  right:70px;  bottom:28px; font-size:12px; }
+  #btnPlace  { width:46px; height:46px; background:rgba(60,100,200,0.80); border-radius:10px; right:16px;  bottom:28px; font-size:11px; }
+  #btnJump   { width:46px; height:46px; background:rgba(220,180,40,0.85); border-radius:50%;  right:16px;  bottom:84px; font-size:13px; color:#000; }
+  #btnE      { width:50px; height:50px; background:rgba(60,180,60,0.85);  border-radius:10px; right:130px; bottom:50px; font-size:11px; display:none; }
 </style>
 </head>
 <body>
 <div id="crosshair"></div>
-<div id="hotbar"></div>
+<div id="hotbarWrap">
+  <button id="hotbarPrev">‹</button>
+  <div id="hotbar"></div>
+  <button id="hotbarNext">›</button>
+</div>
 <div id="online"></div>
 <div id="questTrack" style="display:none"></div>
 <div id="levelFlash"></div>
@@ -143,6 +189,14 @@
 </div>
 <div id="redflash"></div>
 <div id="floaters"></div>
+<div id="orientWarn">请将设备旋转为横屏 🔄</div>
+<div id="mobileControls">
+  <div id="joystickBase" style="display:none"><div id="joystickKnob"></div></div>
+  <button id="btnJump">跳</button>
+  <button id="btnAttack">攻击</button>
+  <button id="btnPlace">放块</button>
+  <button id="btnE">对话</button>
+</div>
 <div id="deathOverlay">你死了<small>3 秒后在出生点复活…</small></div>
 <div id="overlay">
   <div class="panel">
@@ -196,6 +250,7 @@
 <script src="js/net.js"></script>
 <script src="js/entities.js"></script>
 <script src="js/hud.js"></script>
+<script src="js/touch.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>
