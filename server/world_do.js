@@ -597,7 +597,7 @@ export class WorldDO {
       this.tickMob(mob, now);
     }
     for (const boss of this.bosses.values()) {
-      busy = true;
+      if (!boss.dead) busy = true;
       this.tickBoss(boss, now);
     }
     this.tickArrows(now);
@@ -1024,7 +1024,7 @@ export class WorldDO {
             if (boss.dead) continue;
             if (Physics.segmentHitsBox(x0, y0, z0, bx, by, bz, boss)) {
               const [ws2, atk] = this.sessionByPid(a.own);
-              if (atk) this.hurtBoss(boss, a.dmg, ws2, atk, now);
+              this.hurtBoss(boss, a.dmg, ws2, atk || { pid: a.own, questId: null, dead: false }, now);
               hit = { x: bx, y: by, z: bz };
               break;
             }
