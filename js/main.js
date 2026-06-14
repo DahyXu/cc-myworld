@@ -1,11 +1,14 @@
 // js/main.js — 游戏主程序（联机版）
 (function (root) {
   'use strict';
+  const isMobile = 'ontouchstart' in root || root.navigator.maxTouchPoints > 1;
+  if (isMobile) root.document.body.classList.add('mobile');
   const MW = root.MyWorld;
   const Blocks = MW.Blocks, World = MW.World, Mesher = MW.Mesher;
   const Player = MW.Player, Raycast = MW.Raycast, UI = MW.UI;
   const Net = MW.Net, Entities = MW.Entities, P = MW.Protocol;
   const Combat = MW.Combat, Hud = MW.Hud, QuestsDef = MW.QuestsDef;
+  const Touch = isMobile ? MW.Touch : null;
 
   const RENDER_RADIUS = 4, UNLOAD_RADIUS = 6;
   const MAX_GEN_PER_FRAME = 2, MAX_REMESH_PER_FRAME = 4, REACH = 6;
@@ -144,6 +147,8 @@
 
   // --- 指针锁定（仅 start 模式下点击遮罩才锁定）---
   function isLocked() { return document.pointerLockElement === renderer.domElement; }
+  // 移动端无 Pointer Lock；world 存在即视为激活
+  function isActive() { return isLocked() || (isMobile && !!world); }
   document.getElementById('overlay').addEventListener('click', () => {
     if (!world || UI.getOverlayMode() !== 'start') return;
     renderer.domElement.requestPointerLock();
@@ -171,44 +176,62 @@
   }
 
   // --- 挖 / 放：本地预表现 + 上发服务器仲裁 ---
-  document.addEventListener('mousedown', (e) => {
-    if (!isLocked() || !world || selfDead) return;
-    if (e.button === 0) {
-      const d0 = viewDir();
-      const eye = { x: player.x, y: player.y + Player.EYE, z: player.z };
-      const consumed = Combat.onAttackClick(hotbarIndex, eye, d0, Entities.mobList(), Net);
-      if (consumed === 'shoot') {
-        Entities.spawnLocalArrow(eye.x, eye.y, eye.z, d0.x, d0.y, d0.z); // 本地箭预表现
-        return;
-      }
-      if (consumed) return; // 武器格：不挖方块
-    } else if (Combat.ITEMS[hotbarIndex].kind !== 'block') {
-      return; // 武器格右键无操作
-    }
+  function doAttack() {
+    if (!world || selfDead) return;
+    const d0 = viewDir();
+    const eye = { x: player.x, y: player.y + Player.EYE, z: player.z };
+    const consumed = Combat.onAttackClick(hotbarIndex, eye, d0, Entities.mobList(), Net);
+    if (consumed === 'shoot') { Entities.spawnLocalArrow(eye.x, eye.y, eye.z, d0.x, d0.y, d0.z); return; }
+    if (consumed) return;
+    const r = Raycast.cast(world, player.x, player.y + Player.EYE, player.z, d0.x, d0.y, d0.z, REACH);
+    if (!r.hit) return;
+    world.setBlock(r.x, r.y, r.z, 0);
+    Net.send({ t: 'edit', x: r.x, y: r.y, z: r.z, id: 0 });
+  }
+
+  function doPlace() {
+    if (!world || selfDead || Combat.ITEMS[hotbarIndex].kind !== 'block') return;
     const d = viewDir();
     const r = Raycast.cast(world, player.x, player.y + Player.EYE, player.z, d.x, d.y, d.z, REACH);
     if (!r.hit) return;
-    if (e.button === 0) {
-      world.setBlock(r.x, r.y, r.z, 0);
-      Net.send({ t: 'edit', x: r.x, y: r.y, z: r.z, id: 0 });
-    } else if (e.button === 2) {
-      const tx = r.x + r.nx, ty = r.y + r.ny, tz = r.z + r.nz;
-      if (ty < 0 || ty >= World.CHUNK_Y) return;
-      // 不允许把方块放进玩家碰撞箱
-      const overlap = !(tx + 1 <= player.x - Player.HALF || tx >= player.x + Player.HALF ||
-                        ty + 1 <= player.y || ty >= player.y + Player.HEIGHT ||
-                        tz + 1 <= player.z - Player.HALF || tz >= player.z + Player.HALF);
-      if (overlap) return;
-      const id = Combat.ITEMS[hotbarIndex].id;
-      world.setBlock(tx, ty, tz, id);
-      Net.send({ t: 'edit', x: tx, y: ty, z: tz, id });
-    }
+    const tx = r.x + r.nx, ty = r.y + r.ny, tz = r.z + r.nz;
+    if (ty < 0 || ty >= World.CHUNK_Y) return;
+    const overlap = !(tx + 1 <= player.x - Player.HALF || tx >= player.x + Player.HALF ||
+                      ty + 1 <= player.y || ty >= player.y + Player.HEIGHT ||
+                      tz + 1 <= player.z - Player.HALF || tz >= player.z + Player.HALF);
+    if (overlap) return;
+    const id = Combat.ITEMS[hotbarIndex].id;
+    world.setBlock(tx, ty, tz, id);
+    Net.send({ t: 'edit', x: tx, y: ty, z: tz, id });
+  }
+
+  document.addEventListener('mousedown', (e) => {
+    if (isMobile || !isLocked() || !world || selfDead) return;
+    if (e.button === 0) doAttack();
+    else if (e.button === 2) doPlace();
   });
   document.addEventListener('contextmenu', (e) => e.preventDefault());
 
   // --- HUD ---
   UI.buildHotbar(atlas, Combat.ITEMS);
   Combat.init(camera);
+  if (isMobile && Touch) {
+    UI.setMobileMode(true);
+    UI.selectSlot(0); // 触发窗口初始渲染（只显示前 5 格）
+    Touch.init();
+    Touch.registerAttack(doAttack);
+    Touch.registerPlace(doPlace);
+    Touch.registerE(() => { if (world && !selfDead && nearNpc()) openNpcDialog(); });
+    Touch.registerHotbar((dirOrSelect, idx) => {
+      if (dirOrSelect === 'select') {
+        hotbarIndex = idx;
+      } else {
+        hotbarIndex = (hotbarIndex + dirOrSelect + 10) % 10;
+      }
+      UI.selectSlot(hotbarIndex);
+      Combat.setHeld(hotbarIndex);
+    });
+  }
 
   // --- 联机接线 ---
   function applyEdits(list) {
@@ -233,7 +256,7 @@
     Hud.setHp(msg.hp, msg.maxHp);
     for (const mb of msg.mobs) Entities.upsertMob(mb);
     UI.setOnline(msg.online);
-    UI.setOverlayMode('start');
+    if (isMobile) UI.showOverlay(false); else UI.setOverlayMode('start');
     // NPC 长老：固定坐标 + 本地地表高度
     Entities.setNpc(QuestsDef.NPC_X, world.terrainHeight(Math.floor(QuestsDef.NPC_X), Math.floor(QuestsDef.NPC_Z)) + 1, QuestsDef.NPC_Z);
     Hud.setXp(msg.xp, msg.level, msg.xpNext);
@@ -261,7 +284,7 @@
     for (const mb of msg.mobs) Entities.upsertMob(mb);
     for (const pm of msg.players) Entities.upsertPlayer(pm);
     UI.setOnline(msg.online);
-    UI.setOverlayMode('start');
+    if (isMobile) UI.showOverlay(false); else UI.setOverlayMode('start');
   }
 
   // NPC 标记：无任务→可接「！」；有任务且达标→可交「？」；进行中→无标记
@@ -380,13 +403,14 @@
       desc.textContent = '任务进行中：击杀 ' + name + ' ' + currentQuest.progress + '/' + currentQuest.count + '，完成后回来交付。';
       act.style.display = 'none';
     }
+    if (isMobile) { UI.setOverlayMode('npc'); return; }
     pendingNpc = true;
     if (root.document.pointerLockElement) root.document.exitPointerLock(); // 解锁以便点按钮；pointerlockchange 据 pendingNpc 切到 npc 模式
     else { pendingNpc = false; UI.setOverlayMode('npc'); }
   }
   function closeNpcDialog() {
     pendingNpc = false;
-    UI.setOverlayMode('start'); // 回到「点击继续」
+    if (isMobile) UI.showOverlay(false); else UI.setOverlayMode('start'); // 回到「点击继续」
   }
   root.document.getElementById('npcCloseBtn').addEventListener('click', (e) => { e.stopPropagation(); closeNpcDialog(); });
 
@@ -399,7 +423,24 @@
     if (dt > 0.05) dt = 0.05;
 
     if (world && player) {
-      if (isLocked() && !selfDead) Player.update(player, world, dt, input);
+      if (isMobile && Touch) {
+        const mv = Touch.getMove();
+        input.forward = mv.forward >  0.15;
+        input.back    = mv.forward < -0.15;
+        input.left    = mv.strafe  < -0.15;
+        input.right   = mv.strafe  >  0.15;
+        input.jump    = Touch.getJump();
+        if (player) {
+          const vd = Touch.consumeViewDelta();
+          player.yaw   -= vd.dyaw;
+          player.pitch -= vd.dpitch;
+          const lim = Math.PI / 2 - 0.01;
+          if (player.pitch >  lim) player.pitch =  lim;
+          if (player.pitch < -lim) player.pitch = -lim;
+        }
+        Touch.setNpcVisible(nearNpc());
+      }
+      if (isActive() && !selfDead) Player.update(player, world, dt, input);
       // 掉出世界：请求服务器传送（等待期间悬停，避免反复触发）
       if (player.y < -10) {
         if (!respawnPending && Net.connected()) {
