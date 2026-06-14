@@ -98,11 +98,14 @@
   // ── 初始化（isMobile 确认后调用）──
   function init() {
     const canvas = root.document.querySelector('canvas');
-    canvas.style.touchAction = 'none'; // 禁止浏览器默认手势（滚动/缩放）抢占触摸事件
-    canvas.addEventListener('touchstart',  onTouchStart, { passive: false });
-    canvas.addEventListener('touchmove',   onTouchMove,  { passive: false });
-    canvas.addEventListener('touchend',    onTouchEnd,   { passive: false });
-    canvas.addEventListener('touchcancel', onTouchEnd,   { passive: false });
+    canvas.style.touchAction = 'none';
+    // 在 document 层监听，绕过 Firefox Android 不把 touch 派发给 canvas 的问题；
+    // buttons 和 hotbarWrap 自己处理各自的 touch（hotbarWrap 有 stopPropagation）
+    function isGameTouch(e) { return !e.target.closest('button, [data-slot], #overlay'); }
+    root.document.addEventListener('touchstart',  (e) => { if (isGameTouch(e)) onTouchStart(e); }, { passive: false });
+    root.document.addEventListener('touchmove',   (e) => { if (isGameTouch(e)) onTouchMove(e);  }, { passive: false });
+    root.document.addEventListener('touchend',    (e) => { if (isGameTouch(e)) onTouchEnd(e);   }, { passive: false });
+    root.document.addEventListener('touchcancel', (e) => { if (isGameTouch(e)) onTouchEnd(e);   }, { passive: false });
 
     // 操作按钮
     root.document.getElementById('btnAttack').addEventListener('touchstart', (e) => {
