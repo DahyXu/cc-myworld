@@ -344,6 +344,24 @@
   });
   Net.on('mobDie', (m) => Entities.dieMob(m.id));
   Net.on('mobDespawn', (m) => Entities.despawnMob(m.id));
+  Net.on('bossState', (m) => {
+    for (const b of m.bosses) {
+      if (b.alive) {
+        Entities.upsertBoss(b);
+      } else {
+        Entities.showBossCountdown(b.id, b.name, b.x, b.z, b.respawnIn, b.y);
+      }
+    }
+  });
+  Net.on('bossSpawn', (m) => Entities.upsertBoss(m));
+  Net.on('bossMove', (m) => Entities.moveBoss(m));
+  Net.on('bossHurt', (m) => {
+    Entities.hurtBossEntity(m);
+    Hud.floatDamage(m.x || 0, (m.y || 2) + 1, m.z || 0, '-' + m.dmg, '#ff6644');
+  });
+  Net.on('bossDie', (m) => Entities.dieBossEntity(m.id, m.respawnIn));
+  Net.on('bossDied', () => {});
+  Net.on('bossRespawn', (m) => Entities.removeBossTimer(m.id));
   Net.on('arrowSpawn', (m) => Entities.remoteArrow(m));
   Net.on('arrowDie', (m) => Entities.dieArrow(m));
   Net.on('hpUpdate', (m) => {

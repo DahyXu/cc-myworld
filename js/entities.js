@@ -8,6 +8,8 @@
   const players = new Map(); // pid -> { group, tx, ty, tz, tyaw }
   const mobs = new Map();    // id -> { group, tx, ty, tz, tyaw, hp, maxHp, half, height, hurtUntil, dieT, hpBar }
   const arrows = new Map();  // id -> { group, x, y, z, vx, vy, vz, local }
+  const bosses = new Map();    // id -> { group, tx, ty, tz, tyaw, hp, maxHp, half, height, hurtUntil, flashUntil, dieT, bar, name }
+  const bossTimers = new Map(); // id -> { group, intervalId }
 
   function init(s) { scene = s; npc = null; }
 
@@ -279,10 +281,122 @@
     arrows.delete(m.id);
   }
 
+  // —— Boss ——
+  function upsertBoss(m) {
+    clearBossTimer(m.id);
+    let e = bosses.get(m.id);
+    const t = MobsDef.TYPES[m.type];
+    if (!e) {
+      const g = mobModel(m.type);
+      g.scale.set(2, 2, 2);
+      g.traverse((o) => {
+        if (o.isMesh && o.material && o.material.color) {
+          o.material = o.material.clone();
+          o.material.color.multiplyScalar(0.6);
+        }
+      });
+      const tag = nameTag('【Boss】' + m.name, 1.2);
+      tag.position.y = t.height * 2 + 0.6;
+      g.add(tag);
+      const bar = hpBar();
+      bar.group.position.y = t.height * 2 + 0.35;
+      g.add(bar.group);
+      e = { group: g, tx: m.x, ty: m.y, tz: m.z, tyaw: 0,
+        hp: m.hp, maxHp: m.maxHp, half: t.half * 2, height: t.height * 2,
+        hurtUntil: 0, flashUntil: 0, dieT: 0, bar, name: m.name };
+      g.position.set(m.x, m.y, m.z);
+      scene.add(g);
+      bosses.set(m.id, e);
+    } else {
+      e.tx = m.x; e.ty = m.y; e.tz = m.z;
+      e.hp = m.hp; e.maxHp = m.maxHp; e.dieT = 0;
+      e.group.rotation.z = 0;
+      e.bar.group.visible = false;
+      e.bar.fg.scale.x = 0.96;
+    }
+  }
+
+  function moveBoss(m) {
+    const e = bosses.get(m.id);
+    if (!e) return;
+    e.tx = m.x; e.ty = m.y; e.tz = m.z;
+    if (isFinite(m.yaw)) e.tyaw = m.yaw;
+  }
+
+  function hurtBossEntity(m) {
+    const e = bosses.get(m.id);
+    if (!e) return;
+    e.hp = m.hp;
+    e.hurtUntil = performance.now() + 2000;
+    e.flashUntil = performance.now() + 150;
+    e.bar.group.visible = true;
+    e.bar.fg.scale.x = 0.96 * Math.max(0, e.hp / e.maxHp);
+  }
+
+  function dieBossEntity(id, respawnIn) {
+    const e = bosses.get(id);
+    if (!e) return;
+    const bossName = e.name;
+    const bx = e.group.position.x, bz = e.group.position.z, by = e.group.position.y;
+    scene.remove(e.group);
+    disposeGroup(e.group);
+    bosses.delete(id);
+    showBossCountdown(id, bossName, bx, bz, respawnIn, by);
+  }
+
+  function showBossCountdown(id, name, bx, bz, respawnIn, by) {
+    clearBossTimer(id);
+    let remaining = respawnIn;
+    function makeLabel(sec) {
+      const cv = root.document.createElement('canvas');
+      cv.width = 256; cv.height = 64;
+      const ctx = cv.getContext('2d');
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillRect(0, 0, 256, 64);
+      ctx.fillStyle = '#ff9944';
+      ctx.font = 'bold 22px sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const m2 = Math.floor(sec / 60), s2 = sec % 60;
+      ctx.fillText((name || id) + ' ' + m2 + ':' + String(s2).padStart(2, '0') + '后复活', 128, 32);
+      const tex = new root.THREE.CanvasTexture(cv);
+      const sp = new root.THREE.Sprite(new root.THREE.SpriteMaterial({ map: tex, depthTest: false }));
+      sp.scale.set(4, 1, 1);
+      return { sp, tex };
+    }
+    const g = new root.THREE.Group();
+    g.position.set(bx, (by || 2) + 2, bz);
+    let { sp, tex } = makeLabel(remaining);
+    g.add(sp);
+    scene.add(g);
+    const intervalId = setInterval(() => {
+      remaining--;
+      if (remaining <= 0) { clearBossTimer(id); return; }
+      const next = makeLabel(remaining);
+      g.remove(sp);
+      tex.dispose(); sp.material.dispose();
+      sp = next.sp; tex = next.tex;
+      g.add(sp);
+    }, 1000);
+    bossTimers.set(id, { group: g, intervalId });
+  }
+
+  function clearBossTimer(id) {
+    const t = bossTimers.get(id);
+    if (!t) return;
+    clearInterval(t.intervalId);
+    scene.remove(t.group);
+    disposeGroup(t.group);
+    bossTimers.delete(id);
+  }
+
+  function removeBossTimer(id) { clearBossTimer(id); }
+
   function clear() {
     for (const pid of Array.from(players.keys())) removePlayer(pid);
     for (const id of Array.from(mobs.keys())) despawnMob(id);
     for (const id of Array.from(arrows.keys())) dieArrow({ id });
+    for (const id of Array.from(bosses.keys())) { const e2 = bosses.get(id); scene.remove(e2.group); disposeGroup(e2.group); bosses.delete(id); }
+    for (const id of Array.from(bossTimers.keys())) clearBossTimer(id);
   }
 
   // 每帧：插值 + 箭弹道积分 + 受击闪红/死亡倒地
@@ -322,6 +436,23 @@
       });
       if (e.hurtUntil && now > e.hurtUntil) e.bar.group.visible = false;
     }
+    for (const [, e] of bosses) {
+      e.group.position.x += (e.tx - e.group.position.x) * a;
+      e.group.position.y += (e.ty - e.group.position.y) * a;
+      e.group.position.z += (e.tz - e.group.position.z) * a;
+      let dy2 = (e.tyaw || 0) - e.group.rotation.y;
+      while (dy2 > Math.PI) dy2 -= 2 * Math.PI;
+      while (dy2 < -Math.PI) dy2 += 2 * Math.PI;
+      e.group.rotation.y += dy2 * a;
+      const flashing2 = e.flashUntil && now < e.flashUntil;
+      e.group.traverse((o) => {
+        if (o.isMesh && o.material && o.material.color) {
+          if (flashing2 && !o.userData.baseColor) { o.userData.baseColor = o.material.color.getHex(); o.material.color.setHex(0xff5555); }
+          else if (!flashing2 && o.userData.baseColor) { o.material.color.setHex(o.userData.baseColor); o.userData.baseColor = null; }
+        }
+      });
+      if (e.hurtUntil && now > e.hurtUntil) e.bar.group.visible = false;
+    }
     for (const [id, a2] of Array.from(arrows)) {
       a2.vy -= P.ARROW_GRAVITY * dt;
       a2.x += a2.vx * dt; a2.y += a2.vy * dt; a2.z += a2.vz * dt;
@@ -340,5 +471,6 @@
     init, upsertPlayer, movePlayer, removePlayer, clear, update, count,
     upsertMob, moveMob, hurtMob, dieMob, despawnMob, mobList,
     spawnLocalArrow, remoteArrow, dieArrow, setNpc, setNpcMarker,
+    upsertBoss, moveBoss, hurtBossEntity, dieBossEntity, showBossCountdown, removeBossTimer,
   };
 })(typeof self !== 'undefined' ? self : globalThis);
