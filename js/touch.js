@@ -34,6 +34,7 @@
   function onTouchStart(e) {
     e.preventDefault();
     for (const t of e.changedTouches) {
+      if (t.target && t.target.closest && t.target.closest('button, [data-slot], #overlay')) continue;
       if (isLeftHalf(t.clientX) && !joy.active) {
         joy.active = true; joy.id = t.identifier;
         joy.cx = t.clientX; joy.cy = t.clientY; joy.dx = 0; joy.dy = 0;
@@ -101,11 +102,11 @@
     canvas.style.touchAction = 'none';
     // 在 document 层监听，绕过 Firefox Android 不把 touch 派发给 canvas 的问题；
     // buttons 和 hotbarWrap 自己处理各自的 touch（hotbarWrap 有 stopPropagation）
-    function isGameTouch(e) { return !e.target.closest('button, [data-slot], #overlay'); }
-    root.document.addEventListener('touchstart',  (e) => { if (isGameTouch(e)) onTouchStart(e); }, { passive: false });
-    root.document.addEventListener('touchmove',   (e) => { if (isGameTouch(e)) onTouchMove(e);  }, { passive: false });
-    root.document.addEventListener('touchend',    (e) => { if (isGameTouch(e)) onTouchEnd(e);   }, { passive: false });
-    root.document.addEventListener('touchcancel', (e) => { if (isGameTouch(e)) onTouchEnd(e);   }, { passive: false });
+    // 过滤在 onTouchStart 内部逐 touch 处理；move/end 靠 identifier 已经隔离
+    root.document.addEventListener('touchstart',  onTouchStart, { passive: false });
+    root.document.addEventListener('touchmove',   onTouchMove,  { passive: false });
+    root.document.addEventListener('touchend',    onTouchEnd,   { passive: false });
+    root.document.addEventListener('touchcancel', onTouchEnd,   { passive: false });
 
     // 操作按钮
     root.document.getElementById('btnAttack').addEventListener('touchstart', (e) => {
