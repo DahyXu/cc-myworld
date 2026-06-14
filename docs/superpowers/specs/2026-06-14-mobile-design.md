@@ -36,7 +36,6 @@ const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 1;
 移动端下：
 - 不请求 Pointer Lock（`document.body.requestPointerLock` 整段跳过）
 - 显示 `#mobileControls` 层（虚拟摇杆 + 操作按钮）
-- 隐藏桌面十字准星 `#crosshair`
 - yaw/pitch 由 `touch.js` 直接累加到 `player.yaw / player.pitch`，不经过 mousemove
 
 桌面端路径不变，两套输入在 `main.js` 内通过 `isMobile` 分支隔离。
@@ -103,7 +102,6 @@ const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 1;
 #### CSS 关键规则（移动端）
 
 ```css
-body.mobile #crosshair { display: none; }
 body.mobile #mobileControls { display: block; }
 #joystickBase {
   position: fixed; border-radius: 50%;
