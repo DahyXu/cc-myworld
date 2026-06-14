@@ -3,6 +3,8 @@
   'use strict';
   const Blocks = root.MyWorld.Blocks;
   let slots = [];
+  let mobileMode = false;
+  function setMobileMode(on) { mobileMode = on; }
 
   // items: Combat.ITEMS（10 格：剑/弓/8 种方块）；数字标签 1~9,0
   function buildHotbar(atlasCanvas, items) {
@@ -12,6 +14,7 @@
     items.forEach((item, i) => {
       const slot = root.document.createElement('div');
       slot.className = 'slot';
+      slot.dataset.slot = i;
       const cv = root.document.createElement('canvas');
       cv.width = 32; cv.height = 32;
       const ctx = cv.getContext('2d');
@@ -38,6 +41,10 @@
 
   function selectSlot(i) {
     slots.forEach((s, j) => s.classList.toggle('selected', j === i));
+    if (!mobileMode) return;
+    // 移动端：显示以 i 为中心的 5 格窗口（windowStart ∈ [0,5]）
+    const start = Math.min(Math.max(0, i - 2), 5);
+    slots.forEach((s, j) => { s.style.display = (j >= start && j < start + 5) ? '' : 'none'; });
   }
 
   function showOverlay(show) {
@@ -61,5 +68,5 @@
   }
 
   root.MyWorld = root.MyWorld || {};
-  root.MyWorld.UI = { buildHotbar, selectSlot, showOverlay, setOverlayMode, getOverlayMode, setOnline };
+  root.MyWorld.UI = { buildHotbar, selectSlot, showOverlay, setOverlayMode, getOverlayMode, setOnline, setMobileMode };
 })(typeof self !== 'undefined' ? self : globalThis);
