@@ -1,26 +1,30 @@
-// shared/quests_def.js — 两端共享：NPC 坐标、任务链、日常生成、奖励、quest_id 编解码（纯函数）
+// shared/quests_def.js — 两端共享：NPC坐标、主线/日常任务、奖励、quest_id编解码（纯函数）
 (function (root) {
   'use strict';
   const MobsDef = root.MyWorld.MobsDef;
 
-  // NPC「长老」固定在出生点旁（出生点 SPAWN 8.5,8.5，长老在 +z 4 格处，玩家出生即可见）
   const NPC_X = 8.5, NPC_Z = 12.5, NPC_RANGE = 3;
 
-  // 10 环固定任务链：依次引导四个地带（史莱姆→僵尸→骷髅→恶狼）
-  const CHAIN = [
-    { type: 'slime', count: 5 }, { type: 'slime', count: 10 },
-    { type: 'zombie', count: 5 }, { type: 'zombie', count: 10 },
-    { type: 'skeleton', count: 5 }, { type: 'skeleton', count: 10 },
-    { type: 'wolf', count: 5 }, { type: 'wolf', count: 8 },
-    { type: 'wolf', count: 12 }, { type: 'wolf', count: 15 },
+  // 1~10级主线任务（替换旧CHAIN）
+  // kind: kill/collect/boss/explore
+  // type: mob类型 | 材料sub | boss id | 'dist'
+  const MAIN_QUESTS = [
+    { lvReq: 1,  kind: 'kill',    type: 'slime',         count: 5,   xpReward: 90,   coins: 30,  item: null },
+    { lvReq: 2,  kind: 'collect', type: 'slime_gel',     count: 5,   xpReward: 120,  coins: 50,  item: null },
+    { lvReq: 3,  kind: 'boss',    type: 'slime_king',    count: 1,   xpReward: 500,  coins: 100, item: { type: 'weapon', sub: 'sword', tier: 2, enh: 0 } },
+    { lvReq: 4,  kind: 'explore', type: 'dist',          count: 150, xpReward: 150,  coins: 80,  item: null },
+    { lvReq: 5,  kind: 'kill',    type: 'zombie',        count: 10,  xpReward: 225,  coins: 100, item: null },
+    { lvReq: 6,  kind: 'boss',    type: 'zombie_lord',   count: 1,   xpReward: 800,  coins: 200, item: { type: 'weapon', sub: 'bow',   tier: 2, enh: 0 } },
+    { lvReq: 7,  kind: 'collect', type: 'skeleton_bone', count: 8,   xpReward: 375,  coins: 150, item: null },
+    { lvReq: 8,  kind: 'kill',    type: 'skeleton',      count: 10,  xpReward: 500,  coins: 180, item: null },
+    { lvReq: 9,  kind: 'boss',    type: 'skeleton_mage', count: 1,   xpReward: 1200, coins: 300, item: { type: 'weapon', sub: 'sword', tier: 3, enh: 0 } },
+    { lvReq: 10, kind: 'boss',    type: 'wolf_king',     count: 1,   xpReward: 2000, coins: 500, item: { type: 'weapon', sub: 'bow',   tier: 3, enh: 0 } },
   ];
 
-  // 奖励经验 = floor(数量 × 怪基准经验 × 1.5)；交任务是经验大头
   function questReward(type, count) {
     return Math.floor(count * MobsDef.TYPES[type].xp * 1.5);
   }
 
-  // 等级 → 对应地带怪种（日常用）
   function typeForLevel(level) {
     if (level <= 3) return 'slime';
     if (level <= 6) return 'zombie';
@@ -28,31 +32,48 @@
     return 'wolf';
   }
 
-  // 接取时应发的任务：链未走完发链任务，否则按等级发日常
-  function offer(chainIndex, level) {
-    if (chainIndex < CHAIN.length) {
-      const c = CHAIN[chainIndex];
-      return make('c', c.type, c.count);
+  // 返回第 mainIndex 条主线；mainIndex>=10 后发日常；等级不足返回 null
+  function offer(mainIndex, level) {
+    if (mainIndex < MAIN_QUESTS.length) {
+      const mq = MAIN_QUESTS[mainIndex];
+      if (level < mq.lvReq) return null;
+      return { id: 'm:' + mq.type + ':' + mq.count, kind: 'm', questKind: mq.kind,
+               type: mq.type, count: mq.count, xpReward: mq.xpReward, coins: mq.coins, item: mq.item };
     }
     const type = typeForLevel(level);
-    const count = 8 + level; // 日常数量随等级
-    return make('d', type, count);
+    const count = 8 + level;
+    const reward = questReward(type, count);
+    return { id: 'd:' + type + ':' + count, kind: 'd', questKind: 'kill',
+             type, count, reward, xpReward: reward, coins: 0, item: null };
   }
 
-  function make(kind, type, count) {
-    return { id: kind + ':' + type + ':' + count, kind, type, count, reward: questReward(type, count) };
+  // 第 mainIndex 条主线定义（0-9；越界返回null）
+  function mainQuestAt(mainIndex) {
+    return mainIndex >= 0 && mainIndex < MAIN_QUESTS.length ? MAIN_QUESTS[mainIndex] : null;
   }
 
-  // quest_id 解码：kind:type:count → {kind,type,count,reward}；非法返回 null
+  // quest_id解码；支持 m:type:count / d:type:count；非法返回null
   function parse(id) {
     if (typeof id !== 'string') return null;
-    const m = id.split(':');
-    if (m.length !== 3) return null;
-    const kind = m[0], type = m[1], count = parseInt(m[2], 10);
-    if ((kind !== 'c' && kind !== 'd') || !MobsDef.TYPES[type] || !(count > 0)) return null;
-    return { kind, type, count, reward: questReward(type, count) };
+    const parts = id.split(':');
+    if (parts.length !== 3) return null;
+    const kind = parts[0], type = parts[1], count = parseInt(parts[2], 10);
+    if (!(count > 0)) return null;
+
+    if (kind === 'm') {
+      const mq = MAIN_QUESTS.find(q => q.type === type && q.count === count);
+      if (!mq) return null;
+      return { kind: 'm', questKind: mq.kind, type, count,
+               xpReward: mq.xpReward, coins: mq.coins, item: mq.item };
+    }
+    if (kind === 'd') {
+      if (!MobsDef.TYPES[type]) return null;
+      const reward = questReward(type, count);
+      return { kind: 'd', questKind: 'kill', type, count, reward, xpReward: reward, coins: 0, item: null };
+    }
+    return null; // 'c' (旧链任务) 视为非法：登录时服务器会清除
   }
 
   root.MyWorld = root.MyWorld || {};
-  root.MyWorld.QuestsDef = { NPC_X, NPC_Z, NPC_RANGE, CHAIN, questReward, typeForLevel, offer, parse };
+  root.MyWorld.QuestsDef = { NPC_X, NPC_Z, NPC_RANGE, MAIN_QUESTS, questReward, typeForLevel, offer, mainQuestAt, parse };
 })(typeof self !== 'undefined' ? self : globalThis);
