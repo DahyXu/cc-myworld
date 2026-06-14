@@ -6,7 +6,7 @@
   let mobileMode = false;
   function setMobileMode(on) { mobileMode = on; }
 
-  // items: Combat.ITEMS（10 格：剑/弓/8 种方块）；数字标签 1~9,0
+  // items: 10 格数组，每格可为 null / {type:'block',id,qty} / {type:'weapon',sub,tier,enh} / {type:'material',...}
   function buildHotbar(atlasCanvas, items) {
     const bar = root.document.getElementById('hotbar');
     bar.innerHTML = '';
@@ -19,18 +19,23 @@
       cv.width = 32; cv.height = 32;
       const ctx = cv.getContext('2d');
       ctx.imageSmoothingEnabled = false;
-      if (item.kind === 'block') {
-        const t = Blocks.BLOCKS[item.id].tex.side;
-        const sx = (t % Blocks.ATLAS_TILES) * Blocks.TILE_PX;
-        const sy = Math.floor(t / Blocks.ATLAS_TILES) * Blocks.TILE_PX;
-        ctx.drawImage(atlasCanvas, sx, sy, Blocks.TILE_PX, Blocks.TILE_PX, 0, 0, 32, 32);
-        slot.title = Blocks.BLOCKS[item.id].name;
-      } else {
-        root.MyWorld.Combat.drawIcon(ctx, item.kind);
-        slot.title = item.name;
+      if (item && item.type === 'block') {
+        const b = Blocks.BLOCKS[item.id];
+        if (b) {
+          const t = b.tex.side;
+          ctx.drawImage(atlasCanvas,
+            (t % Blocks.ATLAS_TILES) * Blocks.TILE_PX,
+            Math.floor(t / Blocks.ATLAS_TILES) * Blocks.TILE_PX,
+            Blocks.TILE_PX, Blocks.TILE_PX, 0, 0, 32, 32);
+          slot.title = b.name;
+        }
+      } else if (item && item.type === 'weapon') {
+        root.MyWorld.Combat.drawIcon(ctx, item.sub);
+        const TIER = ['初', '精', '传'];
+        slot.title = (item.sub === 'sword' ? '剑' : '弓') + TIER[item.tier - 1] + (item.enh ? '+' + item.enh : '');
       }
       const num = root.document.createElement('span');
-      num.textContent = (i + 1) % 10; // 第 10 格显示 0
+      num.textContent = (i + 1) % 10;
       slot.appendChild(cv);
       slot.appendChild(num);
       bar.appendChild(slot);

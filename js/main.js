@@ -8,6 +8,7 @@
   const Player = MW.Player, Raycast = MW.Raycast, UI = MW.UI;
   const Net = MW.Net, Entities = MW.Entities, P = MW.Protocol;
   const Combat = MW.Combat, Hud = MW.Hud, QuestsDef = MW.QuestsDef;
+  const Inventory = MW.Inventory;
   const Touch = isMobile ? MW.Touch : null;
 
   const RENDER_RADIUS = 4, UNLOAD_RADIUS = 6;
@@ -132,6 +133,10 @@
     if (e.code === 'KeyE' && world && !selfDead && isLocked() && nearNpc()) {
       openNpcDialog();
     }
+    if (e.code === 'KeyB' && world && !selfDead) {
+      Inventory.togglePanel();
+      if (Inventory.isPanelOpen() && isLocked()) root.document.exitPointerLock();
+    }
   });
   window.addEventListener('keyup', (e) => { if (KEYMAP[e.code]) input[KEYMAP[e.code]] = false; });
   window.addEventListener('wheel', (e) => {
@@ -156,6 +161,7 @@
   document.addEventListener('pointerlockchange', () => {
     if (isLocked()) { UI.showOverlay(false); return; }
     if (pendingNpc) { pendingNpc = false; UI.setOverlayMode('npc'); return; }
+    if (Inventory && Inventory.isPanelOpen()) return;
     if (!world) return;
     if (UI.getOverlayMode() === 'replaced') { UI.showOverlay(true); return; } // 被顶替：提示不被覆盖
     UI.setOverlayMode(Net.connected() ? 'start' : 'connecting'); // 断线触发的解锁：保持「连接中」遮罩
@@ -190,7 +196,9 @@
   }
 
   function doPlace() {
-    if (!world || selfDead || Combat.ITEMS[hotbarIndex].kind !== 'block') return;
+    if (!world || selfDead) return;
+    const item = Inventory.getHotbarItem(hotbarIndex);
+    if (!item || item.type !== 'block') return;
     const d = viewDir();
     const r = Raycast.cast(world, player.x, player.y + Player.EYE, player.z, d.x, d.y, d.z, REACH);
     if (!r.hit) return;
@@ -200,7 +208,7 @@
                       ty + 1 <= player.y || ty >= player.y + Player.HEIGHT ||
                       tz + 1 <= player.z - Player.HALF || tz >= player.z + Player.HALF);
     if (overlap) return;
-    const id = Combat.ITEMS[hotbarIndex].id;
+    const id = item.id;
     world.setBlock(tx, ty, tz, id);
     Net.send({ t: 'edit', x: tx, y: ty, z: tz, id });
   }
@@ -213,8 +221,9 @@
   document.addEventListener('contextmenu', (e) => e.preventDefault());
 
   // --- HUD ---
-  UI.buildHotbar(atlas, Combat.ITEMS);
+  UI.buildHotbar(atlas, new Array(10).fill(null));
   Combat.init(camera);
+  Inventory.init(Net, atlas);
   if (isMobile && Touch) {
     UI.setMobileMode(true);
     UI.selectSlot(0); // 触发窗口初始渲染（只显示前 5 格）
@@ -353,6 +362,8 @@
   });
   Net.on('questState', (m) => { currentQuest = m.quest; Hud.setQuest(currentQuest); updateNpcMarker(); if (UI.getOverlayMode() === 'npc') openNpcDialog(); });
   Net.on('pLevelUp', (m) => { Hud.floatDamage(m.x, m.y + 2.3, m.z, '⬆ 升级!', '#ffe066'); });
+  Net.on('inv_state', (m) => { Inventory.applyInvState(m); Combat.setHeld(hotbarIndex); });
+  Net.on('inv_delta', (m) => { Inventory.applyInvDelta(m); Combat.setHeld(hotbarIndex); });
 
   // 起名表单
   function submitName() {
@@ -369,6 +380,10 @@
   });
 
   Net.connect();
+
+  root.addEventListener('invClosed', () => {
+    if (world && !isLocked() && !selfDead) UI.setOverlayMode('start');
+  });
 
   // --- 位置上报（10Hz，有变化才发）---
   let moveAcc = 0;

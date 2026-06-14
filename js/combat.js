@@ -1,16 +1,13 @@
-// js/combat.js — 客户端战斗：快捷栏物品表、武器图标、手持模型与挥击、攻击/射箭意图
+// js/combat.js — 客户端战斗：武器图标、手持模型与挥击、攻击/射箭意图
 (function (root) {
   'use strict';
   const P = root.MyWorld.Protocol;
   const Physics = root.MyWorld.Physics;
 
-  // 快捷栏 10 格：1 剑、2 弓、3~9/0 方块（数字键 0 对应第 10 格）
-  const ITEMS = [
-    { kind: 'sword', name: '剑' },
-    { kind: 'bow', name: '弓' },
-    { kind: 'block', id: 1 }, { kind: 'block', id: 2 }, { kind: 'block', id: 3 }, { kind: 'block', id: 4 },
-    { kind: 'block', id: 5 }, { kind: 'block', id: 6 }, { kind: 'block', id: 7 }, { kind: 'block', id: 8 },
-  ];
+  function getItem(i) {
+    const Inv = root.MyWorld.Inventory;
+    return Inv ? Inv.getHotbarItem(i) : null;
+  }
 
   // 32×32 像素武器图标（程序化绘制，零素材）
   function drawIcon(ctx, kind) {
@@ -60,9 +57,11 @@
   }
 
   function setHeld(itemIndex) {
-    const kind = ITEMS[itemIndex].kind;
-    heldSword.visible = kind === 'sword';
-    heldBow.visible = kind === 'bow';
+    if (!heldSword) return;
+    const item = getItem(itemIndex);
+    const sub = item && item.type === 'weapon' ? item.sub : null;
+    heldSword.visible = sub === 'sword';
+    heldBow.visible   = sub === 'bow';
   }
 
   function swing() { swingT = 0.18; }
@@ -97,29 +96,30 @@
 
   // 返回 true 表示本次点击已被战斗消费（main 据此跳过挖放逻辑）
   function onAttackClick(itemIndex, eye, dir, mobList, net) {
-    const kind = ITEMS[itemIndex].kind;
+    const item = getItem(itemIndex);
+    const sub = item && item.type === 'weapon' ? item.sub : null;
     const now = Date.now();
-    if (kind === 'sword') {
+    if (sub === 'sword') {
       if (now >= meleeReadyAt) {
         meleeReadyAt = now + P.MELEE_CD_MS;
         swing();
         const target = pickMob(eye, dir, mobList);
-        if (target) net.send({ t: 'attack', id: target.id });
+        if (target) net.send({ t: 'attack', id: target.id, slot: itemIndex });
       }
       return true;
     }
-    if (kind === 'bow') {
+    if (sub === 'bow') {
       if (now >= bowReadyAt) {
         bowReadyAt = now + P.BOW_CD_MS;
         swing();
-        net.send({ t: 'shoot', dx: dir.x, dy: dir.y, dz: dir.z });
-        return 'shoot'; // main 据此做本地箭预表现
+        net.send({ t: 'shoot', dx: dir.x, dy: dir.y, dz: dir.z, slot: itemIndex });
+        return 'shoot';
       }
       return true;
     }
-    return false; // 方块：交回 main 的挖放逻辑
+    return false;
   }
 
   root.MyWorld = root.MyWorld || {};
-  root.MyWorld.Combat = { ITEMS, drawIcon, init, setHeld, swing, update, onAttackClick, pickMob };
+  root.MyWorld.Combat = { drawIcon, init, setHeld, swing, update, onAttackClick, pickMob };
 })(typeof self !== 'undefined' ? self : globalThis);
