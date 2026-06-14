@@ -138,6 +138,10 @@ export class WorldDO {
     else if (msg.t === 'respawn') this.onRespawn(ws, s);
     else if (msg.t === 'questAccept') { if (P.validQuestMsg(msg)) this.onQuestAccept(ws, s); }
     else if (msg.t === 'questTurnIn') { if (P.validQuestMsg(msg)) this.onQuestTurnIn(ws, s); }
+    else if (msg.t === 'inv_arrange') { if (P.validInvArrange(msg)) this.onInvArrange(ws, s, msg); }
+    else if (msg.t === 'buy')         { if (P.validBuy(msg))        this.onBuy(ws, s, msg); }
+    else if (msg.t === 'sell')        { if (P.validSell(msg))       this.onSell(ws, s, msg); }
+    else if (msg.t === 'enhance')     { if (P.validEnhance(msg))    this.onEnhance(ws, s, msg); }
     else if (msg.t === 'hello') this.onHello(ws, msg); // 重复 hello：按重新握手处理
   }
 
@@ -255,6 +259,117 @@ export class WorldDO {
     }
   }
 
+  gainOneItem(s, item) {
+    if (item.type === 'block' || item.type === 'material') {
+      for (let i = 0; i < 40; i++) {
+        const sl = s.inv[i];
+        if (!sl || sl.type !== item.type || (sl.qty || 0) >= 64) continue;
+        if (item.type === 'block' && sl.id !== item.id) continue;
+        if (item.type === 'material' && sl.sub !== item.sub) continue;
+        sl.qty = Math.min(64, (sl.qty || 1) + (item.qty || 1));
+        return i;
+      }
+    }
+    for (let i = 0; i < 40; i++) {
+      if (!s.inv[i]) { s.inv[i] = Object.assign({}, item); return i; }
+    }
+    return -1;
+  }
+
+  gainItems(ws, s, items) {
+    const changes = [];
+    for (const item of items) {
+      const slot = this.gainOneItem(s, item);
+      if (slot >= 0) changes.push({ slot, item: s.inv[slot] });
+    }
+    if (changes.length > 0) this.send(ws, { t: 'inv_delta', changes });
+  }
+
+  gainCoins(ws, s, amount) {
+    s.coins = (s.coins || 0) + amount;
+    this.send(ws, { t: 'inv_delta', coins: s.coins });
+  }
+
+  onBuy(ws, s, msg) {
+    if (s.dead || !this.nearNpc(s)) return;
+    const entry = ItemsDef.SHOP_BUY.find(e => e.sub === msg.sub && e.tier === msg.tier);
+    if (!entry || s.coins < entry.price) { this.send(ws, { t: 'inv_delta', coins: s.coins }); return; }
+    s.coins -= entry.price;
+    this.gainItems(ws, s, [{ type: 'weapon', sub: msg.sub, tier: msg.tier, enh: 0 }]);
+    this.send(ws, { t: 'inv_delta', coins: s.coins });
+    this.persistSession(s);
+  }
+
+  onSell(ws, s, msg) {
+    if (s.dead || !this.nearNpc(s)) return;
+    const price = ItemsDef.SHOP_SELL[msg.sub];
+    if (!price) return;
+    let available = 0;
+    for (const it of s.inv) if (it && it.type === 'material' && it.sub === msg.sub) available += it.qty;
+    const qty = Math.min(msg.qty, available);
+    if (qty <= 0) return;
+    let toRemove = qty;
+    const changes = [];
+    for (let i = 0; i < 40 && toRemove > 0; i++) {
+      const it = s.inv[i];
+      if (!it || it.type !== 'material' || it.sub !== msg.sub) continue;
+      const take = Math.min(it.qty, toRemove);
+      it.qty -= take; toRemove -= take;
+      if (it.qty <= 0) s.inv[i] = null;
+      changes.push({ slot: i, item: s.inv[i] });
+    }
+    s.coins = (s.coins || 0) + qty * price;
+    this.send(ws, { t: 'inv_delta', changes, coins: s.coins });
+    this.persistSession(s);
+  }
+
+  onEnhance(ws, s, msg) {
+    if (s.dead) return;
+    const weapon = s.inv[msg.slot];
+    if (!weapon || weapon.type !== 'weapon' || weapon.enh >= 3) return;
+    const nextEnh = weapon.enh + 1;
+    const matSub = ItemsDef.ENH_MATERIAL[weapon.sub];
+    const cost = ItemsDef.ENH_COST[nextEnh];
+    let available = 0;
+    for (const it of s.inv) if (it && it.type === 'material' && it.sub === matSub) available += it.qty;
+    if (available < cost) return;
+    let toRemove = cost;
+    const changes = [];
+    for (let i = 0; i < 40 && toRemove > 0; i++) {
+      const it = s.inv[i];
+      if (!it || it.type !== 'material' || it.sub !== matSub) continue;
+      const take = Math.min(it.qty, toRemove);
+      it.qty -= take; toRemove -= take;
+      if (it.qty <= 0) s.inv[i] = null;
+      changes.push({ slot: i, item: s.inv[i] });
+    }
+    const succeeded = Math.random() < ItemsDef.ENH_RATE[nextEnh];
+    if (succeeded) {
+      weapon.enh = nextEnh;
+    } else if (nextEnh === 3 && weapon.enh > 1) {
+      weapon.enh = 1;
+    }
+    changes.push({ slot: msg.slot, item: weapon });
+    this.send(ws, { t: 'inv_delta', changes });
+    this.persistSession(s);
+  }
+
+  onInvArrange(ws, s, msg) {
+    const pool = s.inv.filter(Boolean).map(it => JSON.stringify(it));
+    const newInv = new Array(40).fill(null);
+    for (let i = 0; i < 40; i++) {
+      const ci = msg.slots[i];
+      if (!ci) continue;
+      const key = JSON.stringify(ci);
+      const idx = pool.indexOf(key);
+      if (idx < 0) return;
+      pool.splice(idx, 1);
+      newInv[i] = ci;
+    }
+    if (pool.length > 0) return;
+    s.inv = newInv;
+  }
+
   // --- 编辑：校验→落库→全员广播（编辑必须全员同步以保证世界一致） ---
   onEdit(ws, s, msg) {
     if (!P.validEdit(msg, s.x, s.y + EYE, s.z, World.CHUNK_Y)) {
@@ -274,6 +389,16 @@ export class WorldDO {
       return;
     }
     const k = msg.x + ',' + msg.y + ',' + msg.z;
+    if (msg.id === 0) {
+      let curId;
+      if (this.edits.has(k)) {
+        curId = this.edits.get(k);
+      } else {
+        this.world.ensureChunk(Math.floor(msg.x / World.CHUNK_X), Math.floor(msg.z / World.CHUNK_Z));
+        curId = this.world.getBlock(msg.x, msg.y, msg.z);
+      }
+      if (curId > 0) this.gainItems(ws, s, [{ type: 'block', id: curId, qty: 1 }]);
+    }
     this.edits.set(k, msg.id);
     this.world.applyRemoteEdit(msg.x, msg.y, msg.z, msg.id);
     this.sql.exec(
@@ -531,7 +656,9 @@ export class WorldDO {
     const kl = Math.hypot(kx, kz) || 1;
     mob.vx += kx / kl * P.KNOCKBACK_H; mob.vz += kz / kl * P.KNOCKBACK_H;
     if (mob.onGround) mob.vy = P.KNOCKBACK_V;
-    this.hurtMob(mob, Stats.swordDamage(s.level), s, now);
+    const sw = (s.inv && Number.isInteger(msg.slot)) ? s.inv[30 + msg.slot] : null;
+    const swordMul = (sw && sw.type === 'weapon' && sw.sub === 'sword') ? ItemsDef.weaponMul(sw.tier, sw.enh) : 1;
+    this.hurtMob(mob, Math.floor(Stats.swordDamage(s.level) * swordMul), s, now);
     this.ensureTick();
   }
 
@@ -542,7 +669,9 @@ export class WorldDO {
     if (now < s.bowReadyAt) return;
     s.bowReadyAt = now + P.BOW_CD_MS;
     const len = Math.hypot(msg.dx, msg.dy, msg.dz);
-    this.spawnArrow(s.x, s.y + EYE, s.z, msg.dx / len, msg.dy / len, msg.dz / len, s.pid, Stats.bowDamage(s.level));
+    const bw = s.inv ? s.inv.slice(30).find(it => it && it.type === 'weapon' && it.sub === 'bow') : null;
+    const bowMul = bw ? ItemsDef.weaponMul(bw.tier, bw.enh) : 1;
+    this.spawnArrow(s.x, s.y + EYE, s.z, msg.dx / len, msg.dy / len, msg.dz / len, s.pid, Math.floor(Stats.bowDamage(s.level) * bowMul));
     this.ensureTick();
   }
 
@@ -589,6 +718,9 @@ export class WorldDO {
         this.send(ws, this.questStateMsg(s));
       }
     }
+    const drop = ItemsDef.rollDrop(mob.type, mob.lv);
+    if (drop.items.length > 0) this.gainItems(ws, s, drop.items);
+    if (drop.coins > 0) this.gainCoins(ws, s, drop.coins);
   }
 
   hurtMob(mob, dmg, attacker, now) {
