@@ -98,6 +98,7 @@
   // ── 初始化（isMobile 确认后调用）──
   function init() {
     const canvas = root.document.querySelector('canvas');
+    canvas.style.touchAction = 'none'; // 禁止浏览器默认手势（滚动/缩放）抢占触摸事件
     canvas.addEventListener('touchstart',  onTouchStart, { passive: false });
     canvas.addEventListener('touchmove',   onTouchMove,  { passive: false });
     canvas.addEventListener('touchend',    onTouchEnd,   { passive: false });

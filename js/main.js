@@ -1,7 +1,7 @@
 // js/main.js — 游戏主程序（联机版）
 (function (root) {
   'use strict';
-  const isMobile = 'ontouchstart' in root || root.navigator.maxTouchPoints > 1;
+  const isMobile = 'ontouchstart' in root || root.navigator.maxTouchPoints >= 1;
   if (isMobile) root.document.body.classList.add('mobile');
   const MW = root.MyWorld;
   const Blocks = MW.Blocks, World = MW.World, Mesher = MW.Mesher;
