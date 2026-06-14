@@ -357,7 +357,8 @@
   Net.on('bossMove', (m) => Entities.moveBoss(m));
   Net.on('bossHurt', (m) => {
     Entities.hurtBossEntity(m);
-    Hud.floatDamage(m.x || 0, (m.y || 2) + 1, m.z || 0, '-' + m.dmg, '#ff6644');
+    const bp = Entities.bossPos(m.id);
+    if (bp) Hud.floatDamage(bp.x, bp.y + 1, bp.z, '-' + m.dmg, '#ff6644');
   });
   Net.on('bossDie', (m) => Entities.dieBossEntity(m.id, m.respawnIn));
   Net.on('bossDied', () => {});

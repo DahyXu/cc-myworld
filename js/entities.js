@@ -472,5 +472,6 @@
     upsertMob, moveMob, hurtMob, dieMob, despawnMob, mobList,
     spawnLocalArrow, remoteArrow, dieArrow, setNpc, setNpcMarker,
     upsertBoss, moveBoss, hurtBossEntity, dieBossEntity, showBossCountdown, removeBossTimer,
+    bossPos: (id) => { const e = bosses.get(id); return e ? { x: e.group.position.x, y: e.group.position.y, z: e.group.position.z } : null; },
   };
 })(typeof self !== 'undefined' ? self : globalThis);
