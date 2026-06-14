@@ -8,10 +8,12 @@ import '../shared/physics.js';
 import '../shared/stats.js';
 import '../shared/mobs_def.js';
 import '../shared/quests_def.js';
+import '../shared/items_def.js';
 
 const MW = globalThis.MyWorld;
 const World = MW.World, P = MW.Protocol;
 const Physics = MW.Physics, Stats = MW.Stats, MobsDef = MW.MobsDef, QuestsDef = MW.QuestsDef;
+const ItemsDef = MW.ItemsDef;
 
 const SPAWN_X = MobsDef.SPAWN_X, SPAWN_Z = MobsDef.SPAWN_Z;
 const EYE = 1.62; // 与客户端 Player.EYE 一致（编辑距离校验用视点）
@@ -42,6 +44,13 @@ export class WorldDO {
       level INTEGER DEFAULT 1, xp INTEGER DEFAULT 0, hp INTEGER DEFAULT 20,
       quest_id TEXT, quest_progress INTEGER DEFAULT 0, chain_index INTEGER DEFAULT 0,
       last_seen INTEGER)`);
+    try { this.sql.exec(`ALTER TABLE players ADD COLUMN coins INTEGER DEFAULT 0`); } catch {}
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS inventory (
+      pid   TEXT NOT NULL,
+      slot  INTEGER NOT NULL,
+      item  TEXT NOT NULL,
+      PRIMARY KEY (pid, slot)
+    )`);
     const row = this.sql.exec(`SELECT value FROM meta WHERE key = 'seed'`).toArray()[0];
     if (row) {
       this.seed = parseInt(row.value, 10);
@@ -78,6 +87,11 @@ export class WorldDO {
         hp: row && isFinite(row.hp) && row.hp > 0 ? Math.min(row.hp, mhp) : mhp, maxHp: mhp,
         dead: false, deadUntil: 0, invulnUntil: 0, lastHurtAt: 0, nextRegenAt: 0, atkReadyAt: 0, bowReadyAt: 0,
       };
+      s.coins = row && isFinite(row.coins) ? row.coins : 0;
+      s.inv = new Array(40).fill(null);
+      for (const r of this.sql.exec(`SELECT slot, item FROM inventory WHERE pid = ?`, a.token).toArray()) {
+        if (r.slot >= 0 && r.slot < 40) { try { s.inv[r.slot] = JSON.parse(r.item); } catch {} }
+      }
       this.sessions.set(ws, s);
       if (a.pid >= this.nextPid) this.nextPid = a.pid + 1;
     }
@@ -161,8 +175,20 @@ export class WorldDO {
       questId: row ? row.quest_id : null,
       questProg: row && isFinite(row.quest_progress) ? row.quest_progress : 0,
       chainIndex: row && isFinite(row.chain_index) ? row.chain_index : 0,
+      coins: row && isFinite(row.coins) ? row.coins : 0,
       hp, maxHp, dead: false, deadUntil: 0, invulnUntil: 0, lastHurtAt: 0, nextRegenAt: 0, atkReadyAt: 0, bowReadyAt: 0 };
     this.sessions.set(ws, s);
+    s.inv = new Array(40).fill(null);
+    const invRows = this.sql.exec(`SELECT slot, item FROM inventory WHERE pid = ?`, token).toArray();
+    if (invRows.length > 0) {
+      for (const r of invRows) {
+        if (r.slot >= 0 && r.slot < 40) { try { s.inv[r.slot] = JSON.parse(r.item); } catch {} }
+      }
+    } else {
+      s.inv[30] = { type: 'weapon', sub: 'sword', tier: 1, enh: 0 };
+      s.inv[31] = { type: 'weapon', sub: 'bow',   tier: 1, enh: 0 };
+      this.saveInventory(s);
+    }
     // 休眠存活凭据：唤醒后 boot() 经 getWebSockets + attachment 恢复会话（pid 延续）
     ws.serializeAttachment({ token: s.token, pid: s.pid, name: s.name });
     // 欢迎包：种子 + 全量方块 diff + 兴趣半径内在线玩家
@@ -188,6 +214,7 @@ export class WorldDO {
     const qstate = this.questStateMsg(s).quest;
     this.send(ws, { t: 'welcome', pid: s.pid, seed: this.seed, x: s.x, y: s.y, z: s.z, edits, players, online: this.sessions.size,
       hp: s.hp, maxHp: s.maxHp, level: s.level, xp: s.xp, xpNext: this.xpNext(s.level), quest: qstate, mobs });
+    this.send(ws, { t: 'inv_state', coins: s.coins, slots: s.inv });
     this.broadcastOnline();
     this.ctx.storage.setAlarm(Date.now() + P.PERSIST_INTERVAL_MS);
     this.ensureTick();
@@ -720,13 +747,24 @@ export class WorldDO {
     }
   }
 
+  saveInventory(s) {
+    this.sql.exec(`DELETE FROM inventory WHERE pid = ?`, s.token);
+    for (let i = 0; i < 40; i++) {
+      if (s.inv[i] !== null) {
+        this.sql.exec(`INSERT INTO inventory (pid, slot, item) VALUES (?, ?, ?)`,
+          s.token, i, JSON.stringify(s.inv[i]));
+      }
+    }
+  }
+
   persistSession(s) {
     // 死亡中落库视同已复活：出生点 + 满血（复活计时跨断线不保留，直接兑现其结果）
     const px = s.dead ? SPAWN_X : s.x, pz = s.dead ? SPAWN_Z : s.z;
     const py = s.dead ? this.world.terrainHeight(8, 8) + 1 : s.y;
     const ph = s.dead ? s.maxHp : s.hp;
-    this.sql.exec(`UPDATE players SET x = ?, y = ?, z = ?, hp = ?, level = ?, xp = ?, quest_id = ?, quest_progress = ?, chain_index = ?, last_seen = ? WHERE token = ?`,
-      px, py, pz, ph, s.level, s.xp, s.questId, s.questProg, s.chainIndex, Date.now(), s.token);
+    this.sql.exec(`UPDATE players SET x = ?, y = ?, z = ?, hp = ?, level = ?, xp = ?, quest_id = ?, quest_progress = ?, chain_index = ?, coins = ?, last_seen = ? WHERE token = ?`,
+      px, py, pz, ph, s.level, s.xp, s.questId, s.questProg, s.chainIndex, s.coins || 0, Date.now(), s.token);
+    this.saveInventory(s);
   }
 
   // 周期落盘（仅在线时续约下一次）
