@@ -170,6 +170,47 @@
   #btnPlace  { width:46px; height:46px; background:rgba(60,100,200,0.80); border-radius:10px; right:16px;  bottom:28px; font-size:11px; }
   #btnJump   { width:46px; height:46px; background:rgba(220,180,40,0.85); border-radius:50%;  right:16px;  bottom:84px; font-size:13px; color:#000; }
   #btnE      { width:50px; height:50px; background:rgba(60,180,60,0.85);  border-radius:10px; right:130px; bottom:50px; font-size:11px; display:none; }
+  /* ── 背包面板 ── */
+  #invPanel { position: fixed; inset: 0; z-index: 30; display: none; }
+  #invBg    { position: absolute; inset: 0; background: rgba(0,0,0,0.65); }
+  #invBox {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
+    background: rgba(20,20,20,0.96); border: 1px solid #555; border-radius: 10px;
+    padding: 16px; min-width: 340px; font-family: sans-serif; color: #eee;
+    max-height: 90vh; overflow-y: auto; box-sizing: border-box;
+  }
+  #invHeader { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  #invHeader span:first-child { font-size: 18px; font-weight: bold; }
+  #invCoins  { color: #ffd24a; font-size: 14px; }
+  #invClose  { background: none; border: 1px solid #555; border-radius: 4px; color: #aaa; cursor: pointer; padding: 2px 8px; font-size: 16px; }
+  #invGrid   { display: grid; grid-template-columns: repeat(6, 48px); gap: 4px; margin-bottom: 8px; }
+  #invHbLabel { font-size: 12px; color: #aaa; margin-bottom: 4px; }
+  #invHbRow  { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 12px; }
+  .inv-slot  {
+    width: 48px; height: 48px; background: rgba(0,0,0,0.45);
+    border: 2px solid #666; border-radius: 4px; position: relative;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    box-sizing: border-box; flex-shrink: 0;
+  }
+  .inv-slot.selected { border-color: #4af; box-shadow: 0 0 6px #4af; }
+  .inv-slot canvas { width: 36px; height: 36px; image-rendering: pixelated; pointer-events: none; }
+  .inv-qty  { position: absolute; right: 2px; bottom: 2px; color: #fff; font: bold 11px sans-serif; text-shadow: 1px 1px 0 #000; pointer-events: none; }
+  .inv-tier { position: absolute; left: 2px; bottom: 2px; color: #ffd24a; font: bold 9px sans-serif; pointer-events: none; }
+  #invBtns { display: flex; gap: 8px; margin-bottom: 8px; }
+  #invBtns button { flex: 1; padding: 7px; border-radius: 4px; border: 1px solid #888; background: #2a2a2a; color: #eee; cursor: pointer; font-size: 14px; }
+  #invBtns button:hover { background: #3a3a3a; }
+  #shopPanel, #enhPanel { border-top: 1px solid #444; padding-top: 12px; margin-top: 4px; }
+  #shopPanel h3, #enhPanel h3 { margin: 0 0 8px; font-size: 14px; }
+  .shop-item { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #333; font-size: 13px; }
+  .shop-item button { padding: 3px 10px; border-radius: 3px; border: 1px solid #7ec850; background: #2c4a1e; color: #cdf0b0; cursor: pointer; font-size: 12px; }
+  .shop-item button:disabled { border-color: #555; background: #222; color: #666; cursor: default; }
+  #enhInfo { font-size: 13px; margin-bottom: 6px; color: #ffd24a; }
+  #enhReq  { font-size: 12px; margin-bottom: 8px; color: #aaa; }
+  #enhDoBtn, #shopClose, #enhClose { padding: 5px 14px; border-radius: 4px; border: 1px solid #888; background: #2a2a2a; color: #eee; cursor: pointer; margin-right: 6px; }
+  #enhDoBtn:disabled { color: #555; cursor: default; }
+  #invGhost { position: fixed; pointer-events: none; z-index: 35; display: none; transform: translate(-50%,-50%); opacity: 0.75; }
+  #btnBag { position: fixed; right: 10px; top: 42px; z-index: 11; width: 44px; height: 44px; border-radius: 50%; background: rgba(0,0,0,0.6); border: 2px solid #888; color: #fff; font-size: 22px; display: none; cursor: pointer; align-items: center; justify-content: center; pointer-events: auto; touch-action: manipulation; }
+  body.mobile #btnBag { display: flex; }
 </style>
 </head>
 <body>
@@ -190,12 +231,45 @@
 <div id="redflash"></div>
 <div id="floaters"></div>
 <div id="orientWarn">请将设备旋转为横屏 🔄</div>
+<!-- 背包面板 -->
+<div id="invPanel">
+  <div id="invBg"></div>
+  <div id="invBox">
+    <div id="invHeader">
+      <span>背包</span>
+      <span id="invCoins">金币: 0</span>
+      <button id="invClose">✕</button>
+    </div>
+    <div id="invGrid"></div>
+    <div id="invHbLabel">快捷栏</div>
+    <div id="invHbRow"></div>
+    <div id="invBtns">
+      <button id="invEnhBtn">强化</button>
+      <button id="invShopBtn">商店</button>
+    </div>
+    <div id="shopPanel" style="display:none">
+      <h3>商店</h3>
+      <div id="shopBuy"></div>
+      <div id="shopSell"></div>
+      <button id="shopClose">关闭</button>
+    </div>
+    <div id="enhPanel" style="display:none">
+      <h3>强化</h3>
+      <div id="enhInfo">点击背包中的武器选择</div>
+      <div id="enhReq"></div>
+      <button id="enhDoBtn" disabled>强化</button>
+      <button id="enhClose">关闭</button>
+    </div>
+  </div>
+  <div id="invGhost"></div>
+</div>
 <div id="mobileControls">
   <div id="joystickBase" style="display:none"><div id="joystickKnob"></div></div>
   <button id="btnJump">跳</button>
   <button id="btnAttack">攻击</button>
   <button id="btnPlace">放块</button>
   <button id="btnE">对话</button>
+  <button id="btnBag">🎒</button>
 </div>
 <div id="deathOverlay">你死了<small>3 秒后在出生点复活…</small></div>
 <div id="overlay">
@@ -241,6 +315,7 @@
 <script src="shared/stats.js"></script>
 <script src="shared/mobs_def.js"></script>
 <script src="shared/quests_def.js"></script>
+<script src="shared/items_def.js"></script>
 <script src="js/world.js"></script>
 <script src="js/mesher.js"></script>
 <script src="js/player.js"></script>
@@ -251,6 +326,7 @@
 <script src="js/entities.js"></script>
 <script src="js/hud.js"></script>
 <script src="js/touch.js"></script>
+<script src="js/inventory.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>
