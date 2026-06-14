@@ -502,8 +502,8 @@ export class WorldDO {
       }
       if (changes.length > 0) this.send(ws, { t: 'inv_delta', changes });
     } else {
-      // kill/boss/explore/daily：检查进度
-      if (s.questProg < q.count) return;
+      // explore: questProg=1表示已到达；kill/boss/daily: questProg需达到count
+      if (q.questKind === 'explore' ? s.questProg < 1 : s.questProg < q.count) return;
     }
 
     // 奖励
