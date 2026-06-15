@@ -235,6 +235,17 @@
     position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%);
     z-index: 12; display: none; pointer-events: none;
   }
+  #teamInviteBanner {
+    position: fixed; top: 60px; left: 50%; transform: translateX(-50%);
+    z-index: 20; display: none; padding: 8px 18px; border-radius: 6px;
+    background: rgba(0,0,0,0.78); color: #fff; font-size: 15px;
+    white-space: nowrap; pointer-events: none;
+  }
+  #teamRoster {
+    position: fixed; left: 12px; top: 80px; z-index: 15; display: none;
+    background: rgba(0,0,0,0.55); border-radius: 6px; padding: 6px 12px;
+    color: #ffd700; font-size: 13px; line-height: 1.7; pointer-events: none;
+  }
 </style>
 </head>
 <body>
@@ -260,6 +271,8 @@
   <canvas id="mapCanvas"></canvas>
 </div>
 <canvas id="waypointHud" width="120" height="44"></canvas>
+<div id="teamInviteBanner"></div>
+<div id="teamRoster"></div>
 <div id="orientWarn">请将设备旋转为横屏 🔄</div>
 <!-- 背包面板 -->
 <div id="invPanel">
