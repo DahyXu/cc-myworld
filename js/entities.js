@@ -114,7 +114,7 @@
       const tag = nameTag(m.name, 1);
       tag.position.y = 2.15;
       g.add(tag);
-      p = { group: g, tx: m.x, ty: m.y, tz: m.z, tyaw: m.yaw || 0 };
+      p = { group: g, tx: m.x, ty: m.y, tz: m.z, tyaw: m.yaw || 0, name: m.name || '' };
       p.group.position.set(m.x, m.y, m.z);
       p.group.rotation.y = p.tyaw;
       scene.add(p.group);
@@ -377,7 +377,7 @@
       sp = next.sp; tex = next.tex;
       g.add(sp);
     }, 1000);
-    bossTimers.set(id, { group: g, intervalId });
+    bossTimers.set(id, { group: g, intervalId, name: name || id, x: bx, z: bz });
   }
 
   function clearBossTimer(id) {
@@ -390,6 +390,26 @@
   }
 
   function removeBossTimer(id) { clearBossTimer(id); }
+
+  function playerList() {
+    const out = [];
+    for (const [, p] of players) {
+      out.push({ x: p.group.position.x, z: p.group.position.z, name: p.name });
+    }
+    return out;
+  }
+
+  function bossList() {
+    const out = [];
+    for (const [id, e] of bosses) {
+      out.push({ id, name: e.name, x: e.group.position.x, z: e.group.position.z,
+        hp: e.hp, maxHp: e.maxHp, dead: false });
+    }
+    for (const [id, t] of bossTimers) {
+      out.push({ id, name: t.name, x: t.x, z: t.z, hp: 0, maxHp: 1, dead: true });
+    }
+    return out;
+  }
 
   function clear() {
     for (const pid of Array.from(players.keys())) removePlayer(pid);
@@ -471,7 +491,7 @@
     init, upsertPlayer, movePlayer, removePlayer, clear, update, count,
     upsertMob, moveMob, hurtMob, dieMob, despawnMob, mobList,
     spawnLocalArrow, remoteArrow, dieArrow, setNpc, setNpcMarker,
-    upsertBoss, moveBoss, hurtBossEntity, dieBossEntity, showBossCountdown, removeBossTimer,
+    upsertBoss, moveBoss, hurtBossEntity, dieBossEntity, showBossCountdown, removeBossTimer, playerList, bossList,
     bossPos: (id) => { const e = bosses.get(id); return e ? { x: e.group.position.x, y: e.group.position.y, z: e.group.position.z } : null; },
   };
 })(typeof self !== 'undefined' ? self : globalThis);
