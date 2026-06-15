@@ -9,6 +9,7 @@
   const Net = MW.Net, Entities = MW.Entities, P = MW.Protocol;
   const Combat = MW.Combat, Hud = MW.Hud, QuestsDef = MW.QuestsDef;
   const Inventory = MW.Inventory;
+  const Minimap = MW.Minimap;
   const Touch = isMobile ? MW.Touch : null;
 
   const RENDER_RADIUS = 4, UNLOAD_RADIUS = 6;
@@ -44,6 +45,7 @@
   const material = new THREE.MeshBasicMaterial({ map: tex, vertexColors: true });
 
   Entities.init(scene);
+  Minimap.init();
   scene.add(camera);
 
   // --- 世界与玩家：收到 welcome 后才创建 ---
@@ -130,6 +132,10 @@
       UI.selectSlot(hotbarIndex);
       Combat.setHeld(hotbarIndex);
     }
+    if (e.code === 'KeyM' && world && !selfDead && !Inventory.isPanelOpen()) {
+      Minimap.toggle();
+      return;
+    }
     if (e.code === 'KeyE' && world && !selfDead && isLocked() && nearNpc()) {
       openNpcDialog();
     }
@@ -162,6 +168,7 @@
     if (isLocked()) { UI.showOverlay(false); return; }
     if (pendingNpc) { pendingNpc = false; UI.setOverlayMode('npc'); return; }
     if (Inventory && Inventory.isPanelOpen()) return;
+    if (Minimap && Minimap.isOpen()) return;
     if (!world) return;
     if (UI.getOverlayMode() === 'replaced') { UI.showOverlay(true); return; } // 被顶替：提示不被覆盖
     UI.setOverlayMode(Net.connected() ? 'start' : 'connecting'); // 断线触发的解锁：保持「连接中」遮罩
@@ -272,6 +279,7 @@
     currentQuest = msg.quest;
     Hud.setQuest(currentQuest);
     updateNpcMarker();
+    Minimap.show(true);
     root.MyWorld.game = { world, player, meshes, seed: msg.seed }; // 调试句柄
   }
 
@@ -289,6 +297,7 @@
     Hud.setQuest(currentQuest);
     updateNpcMarker();
     selfDead = false;
+    Minimap.show(true);
     Hud.showDeath(false);
     for (const mb of msg.mobs) Entities.upsertMob(mb);
     for (const pm of msg.players) Entities.upsertPlayer(pm);
@@ -403,6 +412,9 @@
   root.addEventListener('invClosed', () => {
     if (world && !isLocked() && !selfDead) UI.setOverlayMode('start');
   });
+  root.addEventListener('mapClosed', () => {
+    if (world && !selfDead && !Inventory.isPanelOpen()) UI.setOverlayMode('start');
+  });
 
   // --- 位置上报（10Hz，有变化才发）---
   let moveAcc = 0;
@@ -496,6 +508,13 @@
     Entities.update(dt, world);
     Combat.update(dt);
     Hud.update(dt, camera);
+    if (world && player) {
+      Minimap.update(player, {
+        players: Entities.playerList(),
+        mobs: Entities.mobList(),
+        bosses: Entities.bossList(),
+      });
+    }
     renderer.render(scene, camera);
   }
   requestAnimationFrame(frame);
