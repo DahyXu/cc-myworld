@@ -81,6 +81,7 @@
     if (!player) return;
     lastEntities = entities || { players: [], mobs: [], bosses: [] };
     _drawMinimap(player, entities || { players: [], mobs: [], bosses: [] });
+    _drawWaypointHud(player);
     if (mapOpen) _drawFullMap(player, entities || { players: [], mobs: [], bosses: [] });
   }
 
@@ -200,6 +201,19 @@
       ctx.fill();
       ctx.shadowBlur = 0;
     }
+
+    // 标注点（在已旋转坐标系内）
+    if (waypoint) {
+      let dx = (waypoint.wx - player.x) * SCALE;
+      let dz = (waypoint.wz - player.z) * SCALE;
+      const dist = Math.hypot(dx, dz);
+      const CLAMP = CV_HALF - 5;
+      if (dist > CLAMP) {
+        if (dist === 0) { dx = 0; dz = -CLAMP; }
+        else { const s = CLAMP / dist; dx *= s; dz *= s; }
+      }
+      _drawStar(ctx, dx, dz, 6, 2.5, '#ffe033');
+    }
   }
 
   // ─── 全屏大地图 ──────────────────────────────────────────
@@ -317,6 +331,22 @@
       ctx.fillStyle = '#fff';
       ctx.fillText(txt, tx, ty);
     }
+
+    // 标注点
+    waypointXBtn = null;
+    if (waypoint) {
+      const p = _wc(waypoint.wx, waypoint.wz);
+      _drawStar(ctx, p.x, p.y, 10, 4, '#ffe033');
+      const bx = p.x + 16, by = p.y - 14;
+      waypointXBtn = { x: bx, y: by, r: 10 };
+      ctx.beginPath();
+      ctx.arc(bx, by, 8, 0, Math.PI * 2);
+      ctx.fillStyle = hoverX ? '#cc2222' : 'rgba(80,80,80,0.85)';
+      ctx.fill();
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(bx - 4, by - 4); ctx.lineTo(bx + 4, by + 4); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(bx + 4, by - 4); ctx.lineTo(bx - 4, by + 4); ctx.stroke();
+    }
   }
 
   function _onMapMouseMove(e) {
@@ -382,6 +412,50 @@
     ctx.lineTo(x, y + r);
     ctx.arcTo(x, y, x + r, y, r);
     ctx.closePath();
+  }
+
+  function _drawWaypointHud(player) {
+    if (!waypoint || !player) {
+      waypointHudEl.style.display = 'none';
+      return;
+    }
+    waypointHudEl.style.display = 'block';
+    const ctx = wpCtx;
+    ctx.clearRect(0, 0, 120, 44);
+
+    // 背景
+    ctx.fillStyle = 'rgba(0,0,0,0.62)';
+    _roundRect(ctx, 0, 0, 120, 44, 8);
+    ctx.fill();
+
+    // 相对方位角（玩家坐标系）
+    const dx = waypoint.wx - player.x;
+    const dz = waypoint.wz - player.z;
+    const dotF = -(dx * Math.sin(player.yaw) + dz * Math.cos(player.yaw));
+    const dotR =   dx * Math.cos(player.yaw) - dz * Math.sin(player.yaw);
+    const rel = Math.atan2(dotR, dotF);
+
+    // 旋转箭头（左侧 44×44 区域，圆心 (22,22)）
+    ctx.save();
+    ctx.translate(22, 22);
+    ctx.rotate(rel);
+    ctx.beginPath();
+    ctx.moveTo(0, -13);
+    ctx.lineTo(7, 7);
+    ctx.lineTo(0, 3);
+    ctx.lineTo(-7, 7);
+    ctx.closePath();
+    ctx.fillStyle = '#ffe033';
+    ctx.fill();
+    ctx.restore();
+
+    // 距离文字
+    const dist = Math.hypot(dx, dz);
+    ctx.fillStyle = '#ffe033';
+    ctx.font = 'bold 13px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(Math.round(dist) + ' 格', 48, 22);
   }
 
   root.MyWorld = root.MyWorld || {};
