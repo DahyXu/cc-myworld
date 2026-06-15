@@ -945,7 +945,11 @@ export class WorldDO {
     if (!s.questId) return { t: 'questState', quest: null };
     const q = QuestsDef.parse(s.questId);
     if (!q) return { t: 'questState', quest: null };
-    return { t: 'questState', quest: { type: q.type, count: q.count, progress: s.questProg, questKind: q.questKind } };
+    return { t: 'questState', quest: {
+      type: q.type, count: q.count, progress: s.questProg,
+      questKind: q.questKind, kind: q.kind,
+      xpReward: q.xpReward, coins: q.coins, item: q.item || null,
+    }};
   }
 
   // 给玩家加经验，处理连升级（回满血+金光），下发 xpGain/levelUp
