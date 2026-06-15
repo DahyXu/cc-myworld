@@ -28,6 +28,10 @@
   let mapOpen = false;
   let lastEntities = { players: [], mobs: [], bosses: [] };
   let hoverBoss = null;
+  let waypoint = null;       // { wx, wz } | null
+  let waypointXBtn = null;   // { x, y, r } ✕ 按钮命中区域
+  let hoverX = false;
+  let waypointHudEl = null, wpCtx = null;
 
   // ─── 公开 API ───────────────────────────────────────────
 
@@ -38,12 +42,18 @@
     mapOverlay = root.document.getElementById('mapOverlay');
     mapCanvas  = root.document.getElementById('mapCanvas');
     fmCtx = mapCanvas.getContext('2d');
+    waypointHudEl = root.document.getElementById('waypointHud');
+    wpCtx = waypointHudEl.getContext('2d');
 
     mapCanvas.addEventListener('mousemove', _onMapMouseMove);
+    mapCanvas.addEventListener('click', _onMapClick);
 
     root.document.addEventListener('keydown', (e) => {
       if (e.code === 'Escape' && mapOpen) toggle();
     });
+
+    const saved = localStorage.getItem('waypoint');
+    if (saved) { try { waypoint = JSON.parse(saved); } catch (_) {} }
   }
 
   function show(visible) {
@@ -59,6 +69,8 @@
       if (root.document.pointerLockElement) root.document.exitPointerLock();
     } else {
       show(true);
+      waypointXBtn = null;
+      hoverX = false;
       root.dispatchEvent(new CustomEvent('mapClosed'));
     }
   }
@@ -317,6 +329,59 @@
       const bp = _wc(b.x, b.z);
       if (Math.hypot(mx - bp.x, my - bp.y) <= 10) { hoverBoss = b; break; }
     }
+    hoverX = waypointXBtn != null &&
+      Math.hypot(mx - waypointXBtn.x, my - waypointXBtn.y) <= waypointXBtn.r;
+  }
+
+  function _onMapClick(e) {
+    if (!mapOpen) return;
+    const rect = mapCanvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    if (waypointXBtn && Math.hypot(mx - waypointXBtn.x, my - waypointXBtn.y) <= waypointXBtn.r) {
+      _clearWaypoint();
+      return;
+    }
+    const W = mapCanvas.width, H = mapCanvas.height;
+    _setWaypoint(mx / W * WX_RANGE + WX_MIN, my / H * WZ_RANGE + WZ_MIN);
+  }
+
+  function _setWaypoint(wx, wz) {
+    waypoint = { wx, wz };
+    localStorage.setItem('waypoint', JSON.stringify(waypoint));
+  }
+
+  function _clearWaypoint() {
+    waypoint = null;
+    waypointXBtn = null;
+    localStorage.removeItem('waypoint');
+  }
+
+  function _drawStar(ctx, cx, cy, outerR, innerR, color) {
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const r = i % 2 === 0 ? outerR : innerR;
+      const a = (Math.PI / 5) * i - Math.PI / 2;
+      i === 0 ? ctx.moveTo(cx + r * Math.cos(a), cy + r * Math.sin(a))
+              : ctx.lineTo(cx + r * Math.cos(a), cy + r * Math.sin(a));
+    }
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.fill();
+  }
+
+  function _roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.arcTo(x + w, y, x + w, y + r, r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+    ctx.lineTo(x + r, y + h);
+    ctx.arcTo(x, y + h, x, y + h - r, r);
+    ctx.lineTo(x, y + r);
+    ctx.arcTo(x, y, x + r, y, r);
+    ctx.closePath();
   }
 
   root.MyWorld = root.MyWorld || {};
