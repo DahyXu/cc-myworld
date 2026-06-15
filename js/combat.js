@@ -94,8 +94,20 @@
     return best;
   }
 
+  function pickPlayer(eye, dir, playerList) {
+    const ex = eye.x + dir.x * P.MELEE_RANGE, ey = eye.y + dir.y * P.MELEE_RANGE, ez = eye.z + dir.z * P.MELEE_RANGE;
+    let best = null, bd = Infinity;
+    for (const p of playerList) {
+      if (Physics.segmentHitsBox(eye.x, eye.y, eye.z, ex, ey, ez, p)) {
+        const d = Math.hypot(p.x - eye.x, p.y + p.height / 2 - eye.y, p.z - eye.z);
+        if (d < bd) { bd = d; best = p; }
+      }
+    }
+    return best;
+  }
+
   // 返回 true 表示本次点击已被战斗消费（main 据此跳过挖放逻辑）
-  function onAttackClick(itemIndex, eye, dir, mobList, net) {
+  function onAttackClick(itemIndex, eye, dir, mobList, playerList, net) {
     const item = getItem(itemIndex);
     const sub = item && item.type === 'weapon' ? item.sub : null;
     const now = Date.now();
@@ -103,8 +115,13 @@
       if (now >= meleeReadyAt) {
         meleeReadyAt = now + P.MELEE_CD_MS;
         swing();
-        const target = pickMob(eye, dir, mobList);
-        if (target) net.send({ t: 'attack', id: target.id, slot: itemIndex });
+        const mobTarget = pickMob(eye, dir, mobList);
+        if (mobTarget) {
+          net.send({ t: 'attack', id: mobTarget.id, slot: itemIndex });
+        } else {
+          const playerTarget = pickPlayer(eye, dir, playerList);
+          if (playerTarget) net.send({ t: 'pvpAttack', pid: playerTarget.pid, slot: itemIndex });
+        }
       }
       return true;
     }
@@ -121,5 +138,5 @@
   }
 
   root.MyWorld = root.MyWorld || {};
-  root.MyWorld.Combat = { drawIcon, init, setHeld, swing, update, onAttackClick, pickMob };
+  root.MyWorld.Combat = { drawIcon, init, setHeld, swing, update, onAttackClick, pickMob, pickPlayer };
 })(typeof self !== 'undefined' ? self : globalThis);
