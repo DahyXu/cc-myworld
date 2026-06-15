@@ -5,11 +5,12 @@
   const MobsDef = root.MyWorld.MobsDef;
 
   let scene = null;
-  const players = new Map(); // pid -> { group, tx, ty, tz, tyaw }
+  const players = new Map(); // pid -> { group, tx, ty, tz, tyaw, name, nameSprite }
   const mobs = new Map();    // id -> { group, tx, ty, tz, tyaw, hp, maxHp, half, height, hurtUntil, dieT, hpBar }
   const arrows = new Map();  // id -> { group, x, y, z, vx, vy, vz, local }
   const bosses = new Map();    // id -> { group, tx, ty, tz, tyaw, hp, maxHp, half, height, hurtUntil, flashUntil, dieT, bar, name }
   const bossTimers = new Map(); // id -> { group, intervalId }
+  let myTeamPids = new Set(); // 自己的队员 pid 集合
 
   function init(s) { scene = s; npc = null; }
 
@@ -114,7 +115,8 @@
       const tag = nameTag(m.name, 1);
       tag.position.y = 2.15;
       g.add(tag);
-      p = { group: g, tx: m.x, ty: m.y, tz: m.z, tyaw: m.yaw || 0, name: m.name || '' };
+      p = { group: g, tx: m.x, ty: m.y, tz: m.z, tyaw: m.yaw || 0, name: m.name || '', nameSprite: tag };
+      if (myTeamPids.has(m.pid)) tag.material.color.set(0xffd700);
       p.group.position.set(m.x, m.y, m.z);
       p.group.rotation.y = p.tyaw;
       scene.add(p.group);
@@ -198,6 +200,21 @@
     scene.remove(e.group);
     disposeGroup(e.group);
     mobs.delete(id);
+  }
+
+  function playerAABBList() {
+    const out = [];
+    for (const [pid, p] of players) {
+      out.push({ pid, x: p.group.position.x, y: p.group.position.y, z: p.group.position.z, half: 0.3, height: 1.8 });
+    }
+    return out;
+  }
+
+  function setTeamPids(pids) {
+    myTeamPids = new Set(pids);
+    for (const [pid, p] of players) {
+      if (p.nameSprite) p.nameSprite.material.color.set(myTeamPids.has(pid) ? 0xffd700 : 0xffffff);
+    }
   }
 
   // combat.pickMob 用：当前可见存活怪的 AABB 列表
@@ -492,6 +509,7 @@
     upsertMob, moveMob, hurtMob, dieMob, despawnMob, mobList,
     spawnLocalArrow, remoteArrow, dieArrow, setNpc, setNpcMarker,
     upsertBoss, moveBoss, hurtBossEntity, dieBossEntity, showBossCountdown, removeBossTimer, playerList, bossList,
+    playerAABBList, setTeamPids,
     bossPos: (id) => { const e = bosses.get(id); return e ? { x: e.group.position.x, y: e.group.position.y, z: e.group.position.z } : null; },
   };
 })(typeof self !== 'undefined' ? self : globalThis);
