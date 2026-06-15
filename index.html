@@ -231,6 +231,10 @@
   body.mobile #btnBag { display: flex; }
   #btnFullscreen { position: fixed; bottom: 12px; right: 12px; z-index: 12; width: 30px; height: 30px; background: rgba(0,0,0,0.5); border: 1px solid #555; border-radius: 4px; color: #bbb; font-size: 15px; cursor: pointer; display: flex; align-items: center; justify-content: center; pointer-events: auto; }
   #btnFullscreen:hover { background: rgba(255,255,255,0.15); color: #fff; }
+  #waypointHud {
+    position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%);
+    z-index: 12; display: none; pointer-events: none;
+  }
 </style>
 </head>
 <body>
@@ -255,6 +259,7 @@
   <span id="mapCloseHint">[ M ] 或 [ ESC ] 关闭</span>
   <canvas id="mapCanvas"></canvas>
 </div>
+<canvas id="waypointHud" width="120" height="44"></canvas>
 <div id="orientWarn">请将设备旋转为横屏 🔄</div>
 <!-- 背包面板 -->
 <div id="invPanel">
