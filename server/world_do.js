@@ -33,6 +33,9 @@ export class WorldDO {
     this.arrows = new Map();      // arrowId -> arrow
     this.nextArrowId = 1;
     this.bosses = new Map();
+    this.teams = new Map();          // teamId -> { id, leaderPid, members: Set<pid> }
+    this.nextTeamId = 1;
+    this.pendingInvites = new Map(); // inviteePid -> { fromPid, expiresAt }
     this.tickTimer = null;
     this.idleTicks = 0;
     this.ctx.blockConcurrencyWhile(async () => { this.boot(); });
@@ -200,7 +203,8 @@ export class WorldDO {
       questProg: row && isFinite(row.quest_progress) ? row.quest_progress : 0,
       mainIndex: row && isFinite(row.chain_index) ? row.chain_index : 0,
       coins: row && isFinite(row.coins) ? row.coins : 0,
-      hp, maxHp, dead: false, deadUntil: 0, invulnUntil: 0, lastHurtAt: 0, nextRegenAt: 0, atkReadyAt: 0, bowReadyAt: 0 };
+      hp, maxHp, dead: false, deadUntil: 0, invulnUntil: 0, lastHurtAt: 0, nextRegenAt: 0, atkReadyAt: 0, bowReadyAt: 0,
+      teamId: null };
     this.sessions.set(ws, s);
     // 旧版 'c:...' quest id 在新版 parse 中返回 null，清除避免卡死接任务入口
     if (s.questId && !QuestsDef.parse(s.questId)) {
@@ -1149,9 +1153,47 @@ export class WorldDO {
     const s = this.sessions.get(ws);
     this.sessions.delete(ws);
     if (!s) return;
+    this.removeFromTeam(s);
     this.persistSession(s);
     this.notifyExit(s);
     this.broadcastOnline();
+  }
+
+  removeFromTeam(s) {
+    if (!s || s.teamId === null) return;
+    const teamId = s.teamId;
+    const team = this.teams.get(teamId);
+    s.teamId = null;
+    if (!team) return;
+    team.members.delete(s.pid);
+    if (team.members.size <= 1) {
+      for (const mpid of team.members) {
+        const [mws, ms] = this.sessionByPid(mpid);
+        if (ms) ms.teamId = null;
+        if (mws) this.send(mws, { t: 'teamUpdate', members: [], leaderPid: null });
+      }
+      this.teams.delete(teamId);
+      return;
+    }
+    if (team.leaderPid === s.pid) {
+      team.leaderPid = Math.min(...team.members);
+    }
+    this.broadcastTeamUpdate(teamId);
+  }
+
+  broadcastTeamUpdate(teamId) {
+    const team = this.teams.get(teamId);
+    if (!team) return;
+    const members = [];
+    for (const mpid of team.members) {
+      const [, ms] = this.sessionByPid(mpid);
+      if (ms) members.push({ pid: mpid, name: ms.name });
+    }
+    const msg = { t: 'teamUpdate', members, leaderPid: team.leaderPid };
+    for (const mpid of team.members) {
+      const [mws] = this.sessionByPid(mpid);
+      if (mws) this.send(mws, msg);
+    }
   }
 
   notifyExit(s) {
