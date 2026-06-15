@@ -50,10 +50,12 @@
 
   // --- 世界与玩家：收到 welcome 后才创建 ---
   let world = null, player = null;
-  let selfDead = false; // 死亡期间冻结输入，等服务器复活传送
-  let maxHpCache = 20; // playerHurt 只带 hp，max 来自 welcome/hpUpdate
+  let selfDead = false;
+  let maxHpCache = 20;
   let respawnPending = false;
-  let currentQuest = null; // 当前任务 { type, count, progress } 或 null
+  let currentQuest = null;
+  let pendingInviteFrom = null;
+  let bannerTimer = null;
 
   // --- 区块网格管理 ---
   const meshes = new Map();
@@ -136,8 +138,32 @@
       Minimap.toggle();
       return;
     }
-    if (e.code === 'KeyE' && world && !selfDead && isLocked() && nearNpc()) {
-      openNpcDialog();
+    if (e.code === 'KeyE' && world && !selfDead && isLocked()) {
+      const fwdX = -Math.sin(player.yaw), fwdZ = -Math.cos(player.yaw);
+      const plist = Entities.playerAABBList();
+      let nearestPlayer = null, nearestDist = Infinity;
+      for (const p of plist) {
+        const dx = p.x - player.x, dz = p.z - player.z;
+        const dist = Math.hypot(dx, dz);
+        if (dist <= 5 && dist > 0) {
+          const dot = (dx * fwdX + dz * fwdZ) / dist;
+          if (dot > 0.7 && dist < nearestDist) { nearestPlayer = p; nearestDist = dist; }
+        }
+      }
+      if (nearestPlayer) {
+        Net.send({ t: 'teamInvite', pid: nearestPlayer.pid });
+        showTeamMsg('邀请已发出');
+      } else if (nearNpc()) {
+        openNpcDialog();
+      }
+    }
+    if (e.code === 'KeyY' && pendingInviteFrom !== null) {
+      Net.send({ t: 'teamAccept', pid: pendingInviteFrom });
+      hideTeamBanner();
+    }
+    if (e.code === 'KeyN' && pendingInviteFrom !== null) {
+      Net.send({ t: 'teamDecline', pid: pendingInviteFrom });
+      hideTeamBanner();
     }
     if (e.code === 'KeyB' && world && !selfDead) {
       Inventory.togglePanel();
@@ -193,7 +219,7 @@
     if (!world || selfDead) return;
     const d0 = viewDir();
     const eye = { x: player.x, y: player.y + Player.EYE, z: player.z };
-    const consumed = Combat.onAttackClick(hotbarIndex, eye, d0, Entities.mobList(), Net);
+    const consumed = Combat.onAttackClick(hotbarIndex, eye, d0, Entities.mobList(), Entities.playerAABBList(), Net);
     if (consumed === 'shoot') { Entities.spawnLocalArrow(eye.x, eye.y, eye.z, d0.x, d0.y, d0.z); return; }
     if (consumed) return;
     const r = Raycast.cast(world, player.x, player.y + Player.EYE, player.z, d0.x, d0.y, d0.z, REACH);
@@ -317,6 +343,32 @@
     return Math.hypot(player.x - QuestsDef.NPC_X, player.z - QuestsDef.NPC_Z) <= QuestsDef.NPC_RANGE;
   }
 
+  function showTeamBanner(name) {
+    const el = root.document.getElementById('teamInviteBanner');
+    el.textContent = name + ' 邀请你加队  Y 接受  N 拒绝';
+    el.style.display = 'block';
+  }
+  function hideTeamBanner() {
+    root.document.getElementById('teamInviteBanner').style.display = 'none';
+    pendingInviteFrom = null;
+    clearTimeout(bannerTimer);
+  }
+  function showTeamMsg(text) {
+    const el = root.document.getElementById('teamInviteBanner');
+    el.textContent = text;
+    el.style.display = 'block';
+    clearTimeout(bannerTimer);
+    bannerTimer = setTimeout(() => { el.style.display = 'none'; }, 3000);
+  }
+  function updateTeamRoster(members, leaderPid) {
+    const el = root.document.getElementById('teamRoster');
+    if (!members || members.length === 0) { el.style.display = 'none'; return; }
+    el.style.display = 'block';
+    el.innerHTML = members.map(m =>
+      '<div>' + (m.pid === leaderPid ? '♛ ' : '  ') + m.name + '</div>'
+    ).join('');
+  }
+
   Net.onStatus((st) => {
     if (st === 'file') {
       UI.setOverlayMode('file');
@@ -392,6 +444,21 @@
   Net.on('pLevelUp', (m) => { Hud.floatDamage(m.x, m.y + 2.3, m.z, '⬆ 升级!', '#ffe066'); });
   Net.on('inv_state', (m) => { Inventory.applyInvState(m); Combat.setHeld(hotbarIndex); });
   Net.on('inv_delta', (m) => { Inventory.applyInvDelta(m); Combat.setHeld(hotbarIndex); });
+  Net.on('teamInviteFrom', (m) => {
+    pendingInviteFrom = m.pid;
+    showTeamBanner(m.name);
+    clearTimeout(bannerTimer);
+    bannerTimer = setTimeout(() => { hideTeamBanner(); }, 30000);
+  });
+  Net.on('teamUpdate', (m) => {
+    const pids = (m.members || []).map(p => p.pid);
+    Entities.setTeamPids(pids);
+    updateTeamRoster(m.members, m.leaderPid);
+  });
+  Net.on('teamErr', (m) => {
+    if (m.reason === 'full') showTeamMsg('对方队伍已满');
+    else if (m.reason === 'no_invite') showTeamMsg('邀请已过期');
+  });
 
   // 起名表单
   function submitName() {
