@@ -335,6 +335,7 @@
     // 标注点
     waypointXBtn = null;
     if (waypoint) {
+      ctx.save();
       const p = _wc(waypoint.wx, waypoint.wz);
       _drawStar(ctx, p.x, p.y, 10, 4, '#ffe033');
       const bx = p.x + 16, by = p.y - 14;
@@ -346,6 +347,7 @@
       ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.moveTo(bx - 4, by - 4); ctx.lineTo(bx + 4, by + 4); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(bx + 4, by - 4); ctx.lineTo(bx - 4, by + 4); ctx.stroke();
+      ctx.restore();
     }
   }
 
