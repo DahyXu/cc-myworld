@@ -158,6 +158,7 @@ export class WorldDO {
     else if (msg.t === 'edit') this.onEdit(ws, s, msg);
     else if (msg.t === 'attack') this.onAttack(ws, s, msg);
     else if (msg.t === 'shoot') this.onShoot(ws, s, msg);
+    else if (msg.t === 'pvpAttack') { if (P.validPvpAttack(msg)) this.onPvpAttack(ws, s, msg); }
     else if (msg.t === 'respawn') this.onRespawn(ws, s);
     else if (msg.t === 'questAccept') { if (P.validQuestMsg(msg)) this.onQuestAccept(ws, s); }
     else if (msg.t === 'questTurnIn') { if (P.validQuestMsg(msg)) this.onQuestTurnIn(ws, s); }
@@ -916,6 +917,23 @@ export class WorldDO {
     this.ensureTick();
   }
 
+  onPvpAttack(ws, s, msg) {
+    if (s.dead) return;
+    const now = Date.now();
+    if (now < s.atkReadyAt) return;
+    const [, ts] = this.sessionByPid(msg.pid);
+    if (!ts || ts.dead) return;
+    if (s.teamId !== null && s.teamId === ts.teamId) return;
+    const d = Math.hypot(ts.x - s.x, ts.y + 0.875 - (s.y + EYE), ts.z - s.z);
+    if (d > P.MELEE_RANGE + 1) return;
+    s.atkReadyAt = now + P.MELEE_CD_MS;
+    const sw = (s.inv && Number.isInteger(msg.slot)) ? s.inv[30 + msg.slot] : null;
+    const swordMul = (sw && sw.type === 'weapon' && sw.sub === 'sword') ? ItemsDef.weaponMul(sw.tier, sw.enh) : 1;
+    const dmg = Math.floor(Stats.swordDamage(s.level) * swordMul);
+    this.damagePlayer(ts, dmg, now);
+    this.ensureTick();
+  }
+
   // xpNext：客户端经验条用；满级返回 0（条显示满格）
   xpNext(level) {
     const n = Stats.xpToNext(level);
@@ -1080,6 +1098,18 @@ export class WorldDO {
             if (Physics.segmentHitsBox(x0, y0, z0, bx, by, bz, boss)) {
               const [ws2, atk] = this.sessionByPid(a.own);
               this.hurtBoss(boss, a.dmg, ws2, atk || { pid: a.own, questId: null, dead: false }, now);
+              hit = { x: bx, y: by, z: bz };
+              break;
+            }
+          }
+        }
+        if (!hit) {
+          const [, ownerS] = this.sessionByPid(a.own);
+          for (const [, vs] of this.sessions) {
+            if (vs.dead || vs.pid === a.own) continue;
+            if (ownerS && ownerS.teamId !== null && ownerS.teamId === vs.teamId) continue;
+            if (Physics.segmentHitsBox(x0, y0, z0, bx, by, bz, { x: vs.x, y: vs.y, z: vs.z, half: 0.3, height: 1.8 })) {
+              this.damagePlayer(vs, a.dmg, now);
               hit = { x: bx, y: by, z: bz };
               break;
             }
