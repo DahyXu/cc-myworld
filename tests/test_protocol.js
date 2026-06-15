@@ -86,4 +86,19 @@ assert.ok(!P.validQuestMsg(null));
 assert.ok(!P.validQuestMsg('x'));
 assert.ok(!P.validQuestMsg(5));
 
+// validPvpAttack：pid 必须是正整数
+assert.ok(P.validPvpAttack({ pid: 1 }));
+assert.ok(P.validPvpAttack({ pid: 999 }));
+assert.ok(!P.validPvpAttack({ pid: 0 }), '0 无效');
+assert.ok(!P.validPvpAttack({ pid: -1 }), '负数无效');
+assert.ok(!P.validPvpAttack({ pid: 1.5 }), '小数无效');
+assert.ok(!P.validPvpAttack({ pid: 'abc' }), '字符串无效');
+assert.ok(!P.validPvpAttack(null));
+
+// validTeamPid：与 validPvpAttack 相同约束
+assert.ok(P.validTeamPid({ pid: 1 }));
+assert.ok(!P.validTeamPid({ pid: 0 }));
+assert.ok(!P.validTeamPid({ pid: -1 }));
+assert.ok(!P.validTeamPid(null));
+
 console.log('test_protocol OK');

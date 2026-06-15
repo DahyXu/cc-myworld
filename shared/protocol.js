@@ -110,6 +110,14 @@
     return !!(msg && Number.isInteger(msg.slot) && msg.slot >= 0 && msg.slot < INV_SLOTS);
   }
 
+  function validPvpAttack(msg) {
+    return !!(msg && Number.isInteger(msg.pid) && msg.pid > 0);
+  }
+
+  function validTeamPid(msg) {
+    return !!(msg && Number.isInteger(msg.pid) && msg.pid > 0);
+  }
+
   root.MyWorld = root.MyWorld || {};
   root.MyWorld.Protocol = {
     INTEREST_CHUNKS, REACH, REACH_SLACK, MAX_HSPEED, MAX_VSPEED,
@@ -118,6 +126,7 @@
     INVULN_MS, REGEN_DELAY_MS, DEATH_RESPAWN_MS, MOB_TICK_MS, CAMP_ACTIVE_CHUNKS,
     KNOCKBACK_H, KNOCKBACK_V,
     INV_SLOTS, validInvArrange, validBuy, validSell, validEnhance,
+    validPvpAttack, validTeamPid,
     inInterest, validEdit, clampMove, sanitizeName, backoffMs, validAttack, validShoot, validQuestMsg,
   };
 })(typeof self !== 'undefined' ? self : globalThis);
