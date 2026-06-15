@@ -969,7 +969,40 @@ export class WorldDO {
   grantKill(attacker, mob) {
     const [ws, s] = this.sessionByPid(attacker.pid);
     if (!s || s.dead) return; // 离线/不存在的射手：丢弃（无离线补偿，spec 接受）
-    this.gainXp(ws, s, MobsDef.mobStats(mob.type, mob.lv).xp);
+    const baseXp = MobsDef.mobStats(mob.type, mob.lv).xp;
+
+    // 组队 XP 平分：距击杀点 64 格内的在线队员均分
+    if (s.teamId !== null) {
+      const team = this.teams.get(s.teamId);
+      if (team && team.members.size > 1) {
+        const nearby = [];
+        for (const mpid of team.members) {
+          const [mws, ms] = this.sessionByPid(mpid);
+          if (!ms || ms.dead) continue;
+          if (Math.hypot(ms.x - mob.x, ms.z - mob.z) <= 64) nearby.push([mws, ms]);
+        }
+        if (nearby.length > 1) {
+          const share = Math.floor(baseXp / nearby.length);
+          for (const [mws, ms] of nearby) this.gainXp(mws, ms, share);
+          // 任务进度仅给最后一击者
+          if (s.questId) {
+            const q = QuestsDef.parse(s.questId);
+            if (q && q.type === mob.type && s.questProg < q.count) {
+              s.questProg++;
+              this.send(ws, this.questStateMsg(s));
+            }
+          }
+          // 掉落物归击杀者
+          const drop = ItemsDef.rollDrop(mob.type, mob.lv);
+          if (drop.items.length > 0) this.gainItems(ws, s, drop.items);
+          if (drop.coins > 0) this.gainCoins(ws, s, drop.coins);
+          return;
+        }
+      }
+    }
+
+    // 单人或仅本人在范围内：全额 XP
+    this.gainXp(ws, s, baseXp);
     if (s.questId) {
       const q = QuestsDef.parse(s.questId);
       if (q && q.type === mob.type && s.questProg < q.count) {
