@@ -3,6 +3,7 @@
   'use strict';
 
   const floaters = []; // { el, x, y, z, t }
+  let questCollapsed = false;
 
   function setHp(hp, max) {
     const fill = root.document.getElementById('hpFill');
@@ -32,21 +33,66 @@
     root.document.getElementById('xpFill').style.width = pct + '%';
   }
 
-  // quest 为 { type, count, progress }（type 为怪种 key）或 null
+  const MATS = { slime_gel: '史莱姆凝胶', zombie_rags: '僵尸破布', skeleton_bone: '骷髅骨头', wolf_fang: '狼牙' };
+
+  function questDesc(quest) {
+    const MobsDef = root.MyWorld.MobsDef;
+    switch (quest.questKind) {
+      case 'kill':
+        return '前往野外击杀 ' + quest.count + ' 只' + (MobsDef.TYPES[quest.type]?.name || quest.type);
+      case 'collect':
+        return '收集 ' + quest.count + ' 个' + (MATS[quest.type] || quest.type);
+      case 'boss':
+        return '讨伐 ' + (MobsDef.TYPES[quest.type]?.name || quest.type);
+      case 'explore':
+        return '从出生点向外探索 ' + quest.count + ' 格';
+      default:
+        return '';
+    }
+  }
+
+  function questRewardText(quest) {
+    const TIER = ['', '一', '二', '三'];
+    const SUB  = { sword: '剑', bow: '弓' };
+    let s = (quest.xpReward || 0) + ' XP';
+    if (quest.coins > 0) s += ' · ' + quest.coins + ' 金';
+    if (quest.item) s += '\n+' + (TIER[quest.item.tier] || '') + '阶' + (SUB[quest.item.sub] || quest.item.sub);
+    return s;
+  }
+
   function setQuest(quest) {
-    const el = root.document.getElementById('questTrack');
-    if (!quest) { el.style.display = 'none'; return; }
-    const name = root.MyWorld.MobsDef.TYPES[quest.type].name;
+    const panel = root.document.getElementById('questPanel');
+    if (!quest) { panel.style.display = 'none'; return; }
+
     const done = quest.progress >= quest.count;
-    el.textContent = '击杀 ' + name + ' ' + Math.min(quest.progress, quest.count) + '/' + quest.count + (done ? '（回长老交付）' : '');
-    el.classList.toggle('done', done);
-    el.style.display = 'block';
+    panel.style.display = 'block';
+    panel.classList.toggle('done', done);
+
+    root.document.getElementById('questPanelDesc').textContent =
+      done ? '回长老交付任务' : questDesc(quest);
+
+    const pct = Math.min(quest.progress / quest.count, 1) * 100;
+    root.document.getElementById('questPanelBar').style.width = pct + '%';
+    root.document.getElementById('questPanelCount').textContent =
+      Math.min(quest.progress, quest.count) + ' / ' + quest.count;
+
+    root.document.getElementById('questPanelReward').textContent =
+      '奖励：' + questRewardText(quest);
   }
 
   function levelUpFlash() {
     const el = root.document.getElementById('levelFlash');
     el.style.opacity = '0.9';
     root.setTimeout(() => { el.style.opacity = '0'; }, 500);
+  }
+
+  function initQuestPanel() {
+    const title = root.document.getElementById('questPanelTitle');
+    title.addEventListener('click', () => {
+      questCollapsed = !questCollapsed;
+      root.document.getElementById('questPanel').classList.toggle('collapsed', questCollapsed);
+      root.document.getElementById('questPanelArrow').textContent = questCollapsed ? '▸' : '▾';
+    });
   }
 
   // 世界空间伤害飘字（每帧由 update 投影到屏幕）
@@ -73,6 +119,8 @@
       f.el.style.top = ((1 - (p.y + 1) / 2) * root.innerHeight) + 'px';
     }
   }
+
+  initQuestPanel();
 
   root.MyWorld = root.MyWorld || {};
   root.MyWorld.Hud = { setHp, flashRed, showDeath, floatDamage, update, setLevel, setXp, setQuest, levelUpFlash };
