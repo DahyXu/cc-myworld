@@ -32,6 +32,7 @@
   // ─── 公开 API ───────────────────────────────────────────
 
   function init() {
+    if (minimapEl) return; // already initialized
     minimapEl = root.document.getElementById('minimap');
     mmCtx = minimapEl.getContext('2d');
     mapOverlay = root.document.getElementById('mapOverlay');
@@ -66,9 +67,9 @@
 
   function update(player, entities) {
     if (!player) return;
-    lastEntities = entities;
-    _drawMinimap(player, entities);
-    if (mapOpen) _drawFullMap(player, entities);
+    lastEntities = entities || { players: [], mobs: [], bosses: [] };
+    _drawMinimap(player, entities || { players: [], mobs: [], bosses: [] });
+    if (mapOpen) _drawFullMap(player, entities || { players: [], mobs: [], bosses: [] });
   }
 
   // ─── 小地图 ─────────────────────────────────────────────
@@ -174,8 +175,8 @@
       let dz = (b.z - player.z) * SCALE;
       const dist = Math.hypot(dx, dz);
       if (dist > CV_HALF - 7) {
-        const s = (CV_HALF - 7) / dist;
-        dx *= s; dz *= s;
+        if (dist === 0) { dx = 0; dz = -(CV_HALF - 7); }
+        else { const s = (CV_HALF - 7) / dist; dx *= s; dz *= s; }
       }
       ctx.beginPath();
       ctx.arc(dx, dz, b.dead ? 3 : 5, 0, Math.PI * 2);
