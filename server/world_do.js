@@ -165,6 +165,10 @@ export class WorldDO {
     else if (msg.t === 'buy')         { if (P.validBuy(msg))        this.onBuy(ws, s, msg); }
     else if (msg.t === 'sell')        { if (P.validSell(msg))       this.onSell(ws, s, msg); }
     else if (msg.t === 'enhance')     { if (P.validEnhance(msg))    this.onEnhance(ws, s, msg); }
+    else if (msg.t === 'teamInvite')  { if (P.validTeamPid(msg))    this.onTeamInvite(ws, s, msg); }
+    else if (msg.t === 'teamAccept')  { if (P.validTeamPid(msg))    this.onTeamAccept(ws, s, msg); }
+    else if (msg.t === 'teamDecline') { if (P.validTeamPid(msg))    this.onTeamDecline(ws, s, msg); }
+    else if (msg.t === 'teamLeave')   this.onTeamLeave(ws, s);
     else if (msg.t === 'hello') this.onHello(ws, msg); // 重复 hello：按重新握手处理
   }
 
@@ -1194,6 +1198,50 @@ export class WorldDO {
       const [mws] = this.sessionByPid(mpid);
       if (mws) this.send(mws, msg);
     }
+  }
+
+  onTeamInvite(ws, s, msg) {
+    if (s.dead) return;
+    const [tws, ts] = this.sessionByPid(msg.pid);
+    if (!ts || !tws) return;
+    if (ts.teamId !== null) {
+      const team = this.teams.get(ts.teamId);
+      if (team && team.members.size >= 4) { this.send(ws, { t: 'teamErr', reason: 'full' }); return; }
+    }
+    this.pendingInvites.set(msg.pid, { fromPid: s.pid, expiresAt: Date.now() + 30000 });
+    this.send(tws, { t: 'teamInviteFrom', pid: s.pid, name: s.name });
+  }
+
+  onTeamAccept(ws, s, msg) {
+    const invite = this.pendingInvites.get(s.pid);
+    if (!invite || invite.fromPid !== msg.pid || Date.now() > invite.expiresAt) {
+      this.send(ws, { t: 'teamErr', reason: 'no_invite' }); return;
+    }
+    this.pendingInvites.delete(s.pid);
+    const [, inviterS] = this.sessionByPid(invite.fromPid);
+    if (!inviterS) return;
+    let team;
+    if (inviterS.teamId !== null) {
+      team = this.teams.get(inviterS.teamId);
+      if (!team || team.members.size >= 4) { this.send(ws, { t: 'teamErr', reason: 'full' }); return; }
+    } else {
+      const teamId = this.nextTeamId++;
+      team = { id: teamId, leaderPid: invite.fromPid, members: new Set([invite.fromPid]) };
+      this.teams.set(teamId, team);
+      inviterS.teamId = teamId;
+    }
+    team.members.add(s.pid);
+    s.teamId = team.id;
+    this.broadcastTeamUpdate(team.id);
+  }
+
+  onTeamDecline(ws, s, msg) {
+    const invite = this.pendingInvites.get(s.pid);
+    if (invite && invite.fromPid === msg.pid) this.pendingInvites.delete(s.pid);
+  }
+
+  onTeamLeave(ws, s) {
+    this.removeFromTeam(s);
   }
 
   notifyExit(s) {
