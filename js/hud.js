@@ -4,6 +4,8 @@
 
   const floaters = []; // { el, x, y, z, t }
   let questCollapsed = false;
+  let skillBookOpen = false;
+  let toastTimer = null;
 
   function setHp(hp, max) {
     const fill = root.document.getElementById('hpFill');
@@ -92,8 +94,93 @@
     root.document.getElementById('questPanelArrow').textContent = questCollapsed ? '▸' : '▾';
   }
 
+  function updateSkillBar(skillsState) {
+    const defs = [
+      { id: 'chargedStrike', slot: 'skillSlotQ' },
+      { id: 'sprint',        slot: 'skillSlotG' },
+      { id: 'shockwave',     slot: 'skillSlotR' },
+      { id: 'flight',        slot: 'skillSlotF' },
+    ];
+    for (const { id, slot } of defs) {
+      const el = root.document.getElementById(slot);
+      if (!el) continue;
+      const has = skillsState.hasSkill(id);
+      el.classList.toggle('locked', !has);
+      const cd = el.querySelector('.skillCdOverlay');
+      if (cd) {
+        const left = skillsState.cooldownLeft(id);
+        if (has && left > 0) {
+          cd.style.display = 'flex';
+          cd.textContent = Math.ceil(left) + 's';
+        } else {
+          cd.style.display = 'none';
+        }
+      }
+    }
+  }
+
+  function updateFlightBar(timeLeft, maxTime) {
+    const bar = root.document.getElementById('flightBar');
+    const fill = root.document.getElementById('flightBarFill');
+    if (!bar || !fill) return;
+    if (timeLeft <= 0) { bar.style.display = 'none'; return; }
+    bar.style.display = 'block';
+    fill.style.width = Math.min(100, timeLeft / maxTime * 100) + '%';
+    fill.style.background = timeLeft <= 5 ? '#f44' : '#4af';
+  }
+
+  function showSkillUnlock(name) {
+    const el = root.document.getElementById('skillUnlockToast');
+    if (!el) return;
+    el.textContent = '新技能解锁：' + name + '！';
+    el.style.display = 'block';
+    clearTimeout(toastTimer);
+    toastTimer = root.setTimeout(() => { el.style.display = 'none'; }, 3000);
+  }
+
+  function openSkillBook(level, skillTable) {
+    const grid = root.document.getElementById('skillGrid');
+    if (!grid) return;
+    grid.innerHTML = '';
+    for (const sk of skillTable) {
+      const card = root.document.createElement('div');
+      card.className = 'skillCard' + (level >= sk.unlockLevel ? ' unlocked' : ' locked');
+      let inner = '<div class="scName">' + sk.name + '</div>' +
+        '<div class="scLv">Lv.' + sk.unlockLevel + ' 解锁</div>' +
+        '<div class="scDesc">' + sk.description + '</div>';
+      if (sk.key) inner += '<span class="scKey">' + sk.key + '</span>';
+      card.innerHTML = inner;
+      grid.appendChild(card);
+    }
+    root.document.getElementById('skillBook').style.display = 'flex';
+    skillBookOpen = true;
+  }
+
+  function closeSkillBook() {
+    const el = root.document.getElementById('skillBook');
+    if (el) el.style.display = 'none';
+    skillBookOpen = false;
+    root.dispatchEvent(new CustomEvent('skillBookClosed'));
+  }
+
+  function toggleSkillBook(level, skillTable) {
+    if (skillBookOpen) closeSkillBook();
+    else openSkillBook(level, skillTable);
+  }
+
+  function isSkillBookOpen() { return skillBookOpen; }
+
   function initQuestPanel() {
     root.document.getElementById('questPanelTitle').addEventListener('click', toggleQuestPanel);
+  }
+
+  function initSkillBook() {
+    const closeBtn = root.document.getElementById('skillBookClose');
+    if (closeBtn) closeBtn.addEventListener('click', closeSkillBook);
+    const panel = root.document.getElementById('skillBook');
+    if (panel) panel.addEventListener('click', (e) => {
+      if (e.target === panel) closeSkillBook();
+    });
   }
 
   // 世界空间伤害飘字（每帧由 update 投影到屏幕）
@@ -122,7 +209,9 @@
   }
 
   initQuestPanel();
+  initSkillBook();
 
   root.MyWorld = root.MyWorld || {};
-  root.MyWorld.Hud = { setHp, flashRed, showDeath, floatDamage, update, setLevel, setXp, setQuest, levelUpFlash, toggleQuestPanel };
+  root.MyWorld.Hud = { setHp, flashRed, showDeath, floatDamage, update, setLevel, setXp, setQuest, levelUpFlash, toggleQuestPanel,
+    updateSkillBar, updateFlightBar, showSkillUnlock, openSkillBook, closeSkillBook, toggleSkillBook, isSkillBookOpen };
 })(typeof self !== 'undefined' ? self : globalThis);
