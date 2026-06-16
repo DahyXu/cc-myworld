@@ -9,23 +9,32 @@
   function create(x, y, z) {
     const b = Physics.createBody(x, y, z, HALF, HEIGHT);
     b.yaw = 0; b.pitch = 0;
+    b.flying = false; b.airJumps = 0; b.sprintActive = false;
     return b;
   }
 
-  function update(p, world, dt, input) {
+  function update(p, world, dt, input, skills) {
     // 水平意图速度（yaw=0 面向 -z）
     const fx = -Math.sin(p.yaw), fz = -Math.cos(p.yaw);
     const rx = Math.cos(p.yaw), rz = -Math.sin(p.yaw);
     let mx = 0, mz = 0;
     if (input.forward) { mx += fx; mz += fz; }
-    if (input.back) { mx -= fx; mz -= fz; }
-    if (input.right) { mx += rx; mz += rz; }
-    if (input.left) { mx -= rx; mz -= rz; }
+    if (input.back)    { mx -= fx; mz -= fz; }
+    if (input.right)   { mx += rx; mz += rz; }
+    if (input.left)    { mx -= rx; mz -= rz; }
     const len = Math.hypot(mx, mz);
-    if (len > 0) { mx = mx / len * SPEED; mz = mz / len * SPEED; }
+    const spd = p.sprintActive ? SPEED * 3
+      : (skills && skills.hasSkill('swiftness') ? SPEED * 1.15 : SPEED);
+    if (len > 0) { mx = mx / len * spd; mz = mz / len * spd; }
     p.vx = mx; p.vz = mz;
 
-    if (input.jump) Physics.tryJump(p, JUMP_V);
+    if (p.flying) {
+      if (input.jump) p.vy = 5;
+      else if (input.down) p.vy = -5;
+      else p.vy = 0;
+    } else {
+      if (input.jump) Physics.tryJump(p, JUMP_V);
+    }
     Physics.step(p, world, dt);
   }
 
