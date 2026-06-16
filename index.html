@@ -261,6 +261,70 @@
     background: rgba(0,0,0,0.55); border-radius: 6px; padding: 6px 12px;
     color: #ffd700; font-size: 13px; line-height: 1.7; pointer-events: none;
   }
+  /* 技能热键栏 */
+  #skillBar {
+    position: fixed; left: 50%; bottom: 72px; transform: translateX(-50%);
+    display: flex; gap: 6px; z-index: 10; pointer-events: none;
+  }
+  .skillSlot {
+    width: 48px; height: 48px; position: relative;
+    background: rgba(0,0,0,0.55); border: 2px solid #666; border-radius: 6px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: #fff; font: 10px/1.3 sans-serif; text-align: center; gap: 2px;
+  }
+  .skillSlot.locked { opacity: 0.35; }
+  .skillSlot .skillKey {
+    position: absolute; top: 2px; right: 4px;
+    font-size: 9px; color: #aaa;
+  }
+  .skillSlot .skillCdOverlay {
+    position: absolute; inset: 0; background: rgba(0,0,0,0.65);
+    display: none; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: bold; color: #fff; border-radius: 4px;
+  }
+  /* 飞行进度条 */
+  #flightBar {
+    position: fixed; left: 50%; top: 4px; transform: translateX(-50%);
+    width: 200px; height: 6px; background: rgba(0,0,0,0.4);
+    border-radius: 3px; display: none; z-index: 10; overflow: hidden; pointer-events: none;
+  }
+  #flightBarFill { height: 100%; width: 100%; background: #4af; border-radius: 3px; transition: background 0.3s; }
+  /* 技能书面板 */
+  #skillBook {
+    position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.55); z-index: 25;
+  }
+  #skillBookPanel {
+    background: rgba(20,20,30,0.97); border: 1px solid #555; border-radius: 8px;
+    padding: 16px; width: min(620px, 92vw); max-height: 80vh; overflow-y: auto;
+    color: #fff; font-family: sans-serif;
+  }
+  #skillBookPanel h2 { margin: 0 0 12px; font-size: 18px; color: #ffd700; display: inline-block; }
+  #skillBookClose {
+    float: right; cursor: pointer; font-size: 20px; color: #aaa; background: none;
+    border: none; padding: 0; line-height: 1; margin-top: 2px;
+  }
+  #skillGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 4px; }
+  .skillCard {
+    background: rgba(255,255,255,0.05); border: 1px solid #444; border-radius: 6px;
+    padding: 8px; font-size: 11px;
+  }
+  .skillCard.unlocked { border-color: #5a5; background: rgba(80,160,80,0.13); }
+  .skillCard .scName { font-size: 13px; font-weight: bold; margin-bottom: 3px; }
+  .skillCard.locked .scName { color: #888; }
+  .skillCard .scLv { color: #aaa; margin-bottom: 3px; font-size: 10px; }
+  .skillCard .scDesc { color: #ccc; line-height: 1.3; }
+  .skillCard .scKey {
+    display: inline-block; margin-top: 5px; background: #333;
+    border-radius: 3px; padding: 1px 5px; font-size: 10px; color: #ffd700;
+  }
+  /* 技能解锁提示 */
+  #skillUnlockToast {
+    position: fixed; right: 16px; bottom: 130px; z-index: 15;
+    background: rgba(20,20,30,0.92); border: 1px solid #ffd700;
+    border-radius: 6px; padding: 8px 14px; color: #ffd700;
+    font: 14px sans-serif; display: none; pointer-events: none;
+  }
 </style>
 </head>
 <body>
@@ -377,6 +441,44 @@
   </div>
 </div>
 <div id="nogl">你的浏览器不支持 WebGL，无法运行游戏。请更换或升级浏览器。</div>
+<!-- 技能热键栏 -->
+<div id="skillBar">
+  <div class="skillSlot locked" id="skillSlotQ">
+    <span class="skillKey">Q</span>
+    <span>蓄力</span>
+    <div class="skillCdOverlay"></div>
+  </div>
+  <div class="skillSlot locked" id="skillSlotG">
+    <span class="skillKey">G</span>
+    <span>冲刺</span>
+    <div class="skillCdOverlay"></div>
+  </div>
+  <div class="skillSlot locked" id="skillSlotR">
+    <span class="skillKey">R</span>
+    <span>冲击</span>
+    <div class="skillCdOverlay"></div>
+  </div>
+  <div class="skillSlot locked" id="skillSlotF">
+    <span class="skillKey">F</span>
+    <span>飞行</span>
+    <div class="skillCdOverlay"></div>
+  </div>
+</div>
+
+<!-- 飞行进度条 -->
+<div id="flightBar"><div id="flightBarFill"></div></div>
+
+<!-- 技能书面板 -->
+<div id="skillBook">
+  <div id="skillBookPanel">
+    <button id="skillBookClose">×</button>
+    <h2>技能书</h2>
+    <div id="skillGrid"></div>
+  </div>
+</div>
+
+<!-- 技能解锁提示 -->
+<div id="skillUnlockToast"></div>
 <script src="lib/three.min.js"></script>
 <script src="js/noise.js"></script>
 <script src="js/blocks.js"></script>
@@ -388,6 +490,7 @@
 <script src="shared/items_def.js"></script>
 <script src="js/world.js"></script>
 <script src="js/mesher.js"></script>
+<script src="js/skills.js"></script>
 <script src="js/player.js"></script>
 <script src="js/interact.js"></script>
 <script src="js/combat.js"></script>
