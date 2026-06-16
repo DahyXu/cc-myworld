@@ -107,7 +107,7 @@
   }
 
   // 返回 true 表示本次点击已被战斗消费（main 据此跳过挖放逻辑）
-  function onAttackClick(itemIndex, eye, dir, mobList, playerList, net) {
+  function onAttackClick(itemIndex, eye, dir, mobList, playerList, net, charged) {
     const item = getItem(itemIndex);
     const sub = item && item.type === 'weapon' ? item.sub : null;
     const now = Date.now();
@@ -117,10 +117,10 @@
         swing();
         const mobTarget = pickMob(eye, dir, mobList);
         if (mobTarget) {
-          net.send({ t: 'attack', id: mobTarget.id, slot: itemIndex });
+          net.send({ t: 'attack', id: mobTarget.id, slot: itemIndex, charged: !!charged });
         } else {
           const playerTarget = pickPlayer(eye, dir, playerList);
-          if (playerTarget) net.send({ t: 'pvpAttack', pid: playerTarget.pid, slot: itemIndex });
+          if (playerTarget) net.send({ t: 'pvpAttack', pid: playerTarget.pid, slot: itemIndex, charged: !!charged });
         }
       }
       return true;
