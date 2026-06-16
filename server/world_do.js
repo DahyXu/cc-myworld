@@ -92,6 +92,7 @@ export class WorldDO {
         mainIndex: row && isFinite(row.chain_index) ? row.chain_index : 0,
         hp: row && isFinite(row.hp) && row.hp > 0 ? Math.min(row.hp, mhp) : mhp, maxHp: mhp,
         dead: false, deadUntil: 0, invulnUntil: 0, lastHurtAt: 0, nextRegenAt: 0, atkReadyAt: 0, bowReadyAt: 0,
+        undyingUsedAt: 0, nextSkillRegenAt: 0,
       };
       s.coins = row && isFinite(row.coins) ? row.coins : 0;
       s.inv = new Array(40).fill(null);
@@ -170,6 +171,7 @@ export class WorldDO {
     else if (msg.t === 'teamAccept')  { if (P.validTeamPid(msg))    this.onTeamAccept(ws, s, msg); }
     else if (msg.t === 'teamDecline') { if (P.validTeamPid(msg))    this.onTeamDecline(ws, s, msg); }
     else if (msg.t === 'teamLeave')   this.onTeamLeave(ws, s);
+    else if (msg.t === 'aoeAttack')   this.onAoeAttack(ws, s);
     else if (msg.t === 'hello') this.onHello(ws, msg); // 重复 hello：按重新握手处理
   }
 
@@ -209,7 +211,7 @@ export class WorldDO {
       mainIndex: row && isFinite(row.chain_index) ? row.chain_index : 0,
       coins: row && isFinite(row.coins) ? row.coins : 0,
       hp, maxHp, dead: false, deadUntil: 0, invulnUntil: 0, lastHurtAt: 0, nextRegenAt: 0, atkReadyAt: 0, bowReadyAt: 0,
-      teamId: null };
+      teamId: null, undyingUsedAt: 0, nextSkillRegenAt: 0 };
     this.sessions.set(ws, s);
     // 旧版 'c:...' quest id 在新版 parse 中返回 null，清除避免卡死接任务入口
     if (s.questId && !QuestsDef.parse(s.questId)) {
@@ -898,7 +900,9 @@ export class WorldDO {
     if (mob) { mob.vx += kx / kl * P.KNOCKBACK_H; mob.vz += kz / kl * P.KNOCKBACK_H; if (mob.onGround) mob.vy = P.KNOCKBACK_V; }
     const sw = (s.inv && Number.isInteger(msg.slot)) ? s.inv[30 + msg.slot] : null;
     const swordMul = (sw && sw.type === 'weapon' && sw.sub === 'sword') ? ItemsDef.weaponMul(sw.tier, sw.enh) : 1;
-    const dmg = Math.floor(Stats.swordDamage(s.level) * swordMul);
+    const chargedMul = (msg.charged === true && s.level >= 4) ? 2.5 : 1;
+    const warSoulMul = s.level >= 17 ? 1.2 : 1;
+    const dmg = Math.floor(Stats.swordDamage(s.level) * swordMul * chargedMul * warSoulMul);
     if (mob) this.hurtMob(mob, dmg, s, now);
     else this.hurtBoss(boss, dmg, ws, s, now);
     this.ensureTick();
@@ -909,7 +913,8 @@ export class WorldDO {
     if (s.dead || !P.validShoot(msg)) return;
     const now = Date.now();
     if (now < s.bowReadyAt) return;
-    s.bowReadyAt = now + P.BOW_CD_MS;
+    const bowCdMs = s.level >= 9 ? Math.floor(P.BOW_CD_MS * 0.7) : P.BOW_CD_MS;
+    s.bowReadyAt = now + bowCdMs;
     const len = Math.hypot(msg.dx, msg.dy, msg.dz);
     const bw = s.inv ? s.inv.slice(30).find(it => it && it.type === 'weapon' && it.sub === 'bow') : null;
     const bowMul = bw ? ItemsDef.weaponMul(bw.tier, bw.enh) : 1;
@@ -929,7 +934,9 @@ export class WorldDO {
     s.atkReadyAt = now + P.MELEE_CD_MS;
     const sw = (s.inv && Number.isInteger(msg.slot)) ? s.inv[30 + msg.slot] : null;
     const swordMul = (sw && sw.type === 'weapon' && sw.sub === 'sword') ? ItemsDef.weaponMul(sw.tier, sw.enh) : 1;
-    const dmg = Math.floor(Stats.swordDamage(s.level) * swordMul);
+    const chargedMul = (msg.charged === true && s.level >= 4) ? 2.5 : 1;
+    const warSoulMul = s.level >= 17 ? 1.2 : 1;
+    const dmg = Math.floor(Stats.swordDamage(s.level) * swordMul * chargedMul * warSoulMul);
     this.damagePlayer(ts, dmg, now);
     this.ensureTick();
   }
@@ -954,7 +961,8 @@ export class WorldDO {
 
   // 给玩家加经验，处理连升级（回满血+金光），下发 xpGain/levelUp
   gainXp(ws, s, amount) {
-    const r = Stats.applyXp(s.level, s.xp, amount);
+    const finalAmount = s.level >= 19 ? Math.round(amount * 1.25) : amount;
+    const r = Stats.applyXp(s.level, s.xp, finalAmount);
     s.xp = r.xp;
     if (r.leveled) {
       s.level = r.level;
@@ -1176,16 +1184,25 @@ export class WorldDO {
   // 玩家受伤：无敌帧 → 扣血 → 死亡进入复活倒计时
   damagePlayer(s, dmg, now) {
     if (s.dead || now < s.invulnUntil) return;
-    s.hp -= dmg;
+    // 坚韧：受到伤害 -10%（level >= 8）
+    const finalDmg = s.level >= 8 ? Math.round(dmg * 0.9) : dmg;
+    s.hp -= finalDmg;
     s.invulnUntil = now + P.INVULN_MS;
     s.lastHurtAt = now;
     const [ws] = this.sessionByPid(s.pid);
     if (s.hp <= 0) {
+      // 不死之身：level >= 20，60s 冷却
+      if (s.level >= 20 && now > (s.undyingUsedAt || 0) + 60000) {
+        s.hp = 1;
+        s.undyingUsedAt = now;
+        if (ws) this.send(ws, { t: 'playerHurt', hp: s.hp, dmg: finalDmg });
+        return;
+      }
       s.hp = 0; s.dead = true; s.deadUntil = now + P.DEATH_RESPAWN_MS;
-      s.xp = Stats.xpAfterDeath(s.xp); // 扣当前等级进度 10%，不降级
+      s.xp = Stats.xpAfterDeath(s.xp);
       if (ws) { this.send(ws, { t: 'playerDie' }); this.send(ws, { t: 'xpGain', xp: s.xp, level: s.level, xpNext: this.xpNext(s.level) }); }
     } else if (ws) {
-      this.send(ws, { t: 'playerHurt', hp: s.hp, dmg });
+      this.send(ws, { t: 'playerHurt', hp: s.hp, dmg: finalDmg });
     }
   }
 
@@ -1212,6 +1229,12 @@ export class WorldDO {
         if (now - s.lastHurtAt >= P.REGEN_DELAY_MS && now >= s.nextRegenAt) {
           s.hp = Math.min(s.maxHp, s.hp + 1);
           s.nextRegenAt = now + 1000;
+          this.send(ws, { t: 'hpUpdate', hp: s.hp, max: s.maxHp });
+        }
+        // 技能自愈（regen）：level >= 6，每 6s 额外回 3 HP
+        if (s.level >= 6 && now >= (s.nextSkillRegenAt || 0)) {
+          s.hp = Math.min(s.maxHp, s.hp + 3);
+          s.nextSkillRegenAt = now + 6000;
           this.send(ws, { t: 'hpUpdate', hp: s.hp, max: s.maxHp });
         }
       }
@@ -1309,6 +1332,32 @@ export class WorldDO {
 
   onTeamLeave(ws, s) {
     this.removeFromTeam(s);
+  }
+
+  onAoeAttack(ws, s) {
+    if (s.dead || s.level < 12) return;
+    const now = Date.now();
+    const { x: ex, y: ey, z: ez } = s;
+    for (const mob of this.mobs.values()) {
+      if (mob.dead) continue;
+      if (Math.hypot(mob.x - ex, mob.y - ey, mob.z - ez) <= 4) {
+        this.hurtMob(mob, 15, s, now);
+      }
+    }
+    for (const boss of this.bosses.values()) {
+      if (boss.dead) continue;
+      if (Math.hypot(boss.x - ex, boss.y - ey, boss.z - ez) <= 4) {
+        this.hurtBoss(boss, 15, ws, s, now);
+      }
+    }
+    for (const [, ts] of this.sessions) {
+      if (ts.pid === s.pid || ts.dead) continue;
+      if (s.teamId !== null && s.teamId === ts.teamId) continue;
+      if (Math.hypot(ts.x - ex, ts.y - ey, ts.z - ez) <= 4) {
+        this.damagePlayer(ts, 15, now);
+      }
+    }
+    this.ensureTick();
   }
 
   notifyExit(s) {
