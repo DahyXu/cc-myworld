@@ -138,6 +138,10 @@
       Minimap.toggle();
       return;
     }
+    if (e.code === 'KeyJ' && world) {
+      Hud.toggleQuestPanel();
+      return;
+    }
     if (e.code === 'KeyE' && world && !selfDead && isLocked()) {
       const fwdX = -Math.sin(player.yaw), fwdZ = -Math.cos(player.yaw);
       const plist = Entities.playerAABBList();

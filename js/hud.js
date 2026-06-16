@@ -86,13 +86,14 @@
     root.setTimeout(() => { el.style.opacity = '0'; }, 500);
   }
 
+  function toggleQuestPanel() {
+    questCollapsed = !questCollapsed;
+    root.document.getElementById('questPanel').classList.toggle('collapsed', questCollapsed);
+    root.document.getElementById('questPanelArrow').textContent = questCollapsed ? '▸' : '▾';
+  }
+
   function initQuestPanel() {
-    const title = root.document.getElementById('questPanelTitle');
-    title.addEventListener('click', () => {
-      questCollapsed = !questCollapsed;
-      root.document.getElementById('questPanel').classList.toggle('collapsed', questCollapsed);
-      root.document.getElementById('questPanelArrow').textContent = questCollapsed ? '▸' : '▾';
-    });
+    root.document.getElementById('questPanelTitle').addEventListener('click', toggleQuestPanel);
   }
 
   // 世界空间伤害飘字（每帧由 update 投影到屏幕）
@@ -123,5 +124,5 @@
   initQuestPanel();
 
   root.MyWorld = root.MyWorld || {};
-  root.MyWorld.Hud = { setHp, flashRed, showDeath, floatDamage, update, setLevel, setXp, setQuest, levelUpFlash };
+  root.MyWorld.Hud = { setHp, flashRed, showDeath, floatDamage, update, setLevel, setXp, setQuest, levelUpFlash, toggleQuestPanel };
 })(typeof self !== 'undefined' ? self : globalThis);
