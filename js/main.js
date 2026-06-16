@@ -437,7 +437,13 @@
     Entities.hurtMob(m);
     if (e) Hud.floatDamage(e.x, e.y + e.height + 0.3, e.z, '-' + m.dmg, '#ffd24a');
   });
-  Net.on('mobDie', (m) => Entities.dieMob(m.id));
+  Net.on('mobDie', (m) => {
+    if (m.dmg) {
+      const e = Entities.mobList().find((x) => x.id === m.id);
+      if (e) Hud.floatDamage(e.x, e.y + e.height + 0.3, e.z, '-' + m.dmg, '#ffd24a');
+    }
+    Entities.dieMob(m.id);
+  });
   Net.on('mobDespawn', (m) => Entities.despawnMob(m.id));
   Net.on('bossState', (m) => {
     for (const b of m.bosses) {
@@ -455,7 +461,13 @@
     const bp = Entities.bossPos(m.id);
     if (bp) Hud.floatDamage(bp.x, bp.y + 1, bp.z, '-' + m.dmg, '#ff6644');
   });
-  Net.on('bossDie', (m) => Entities.dieBossEntity(m.id, m.respawnIn));
+  Net.on('bossDie', (m) => {
+    if (m.dmg) {
+      const bp = Entities.bossPos(m.id);
+      if (bp) Hud.floatDamage(bp.x, bp.y + 1, bp.z, '-' + m.dmg, '#ff6644');
+    }
+    Entities.dieBossEntity(m.id, m.respawnIn);
+  });
   Net.on('bossDied', () => {});
   Net.on('bossRespawn', (m) => Entities.removeBossTimer(m.id));
   Net.on('arrowSpawn', (m) => Entities.remoteArrow(m));

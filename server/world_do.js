@@ -341,7 +341,13 @@ export class WorldDO {
       const slot = this.gainOneItem(s, item);
       if (slot >= 0) changes.push({ slot, item: s.inv[slot] });
     }
-    if (changes.length > 0) this.send(ws, { t: 'inv_delta', changes });
+    if (changes.length > 0) {
+      this.send(ws, { t: 'inv_delta', changes });
+      if (s.questId) {
+        const q = QuestsDef.parse(s.questId);
+        if (q && q.kind === 'm' && q.questKind === 'collect') this.send(ws, this.questStateMsg(s));
+      }
+    }
   }
 
   gainCoins(ws, s, amount) {
@@ -953,8 +959,16 @@ export class WorldDO {
     if (!s.questId) return { t: 'questState', quest: null };
     const q = QuestsDef.parse(s.questId);
     if (!q) return { t: 'questState', quest: null };
+    let progress = s.questProg;
+    if (q.kind === 'm' && q.questKind === 'collect') {
+      progress = 0;
+      for (const it of s.inv) {
+        if (it && it.type === 'material' && it.sub === q.type) progress += (it.qty || 1);
+      }
+      progress = Math.min(progress, q.count);
+    }
     return { t: 'questState', quest: {
-      type: q.type, count: q.count, progress: s.questProg,
+      type: q.type, count: q.count, progress,
       questKind: q.questKind, kind: q.kind,
       xpReward: q.xpReward, coins: q.coins, item: q.item || null,
     }};
@@ -1036,7 +1050,7 @@ export class WorldDO {
     if (mob.hp <= 0) {
       mob.hp = 0; mob.dead = true;
       mob.respawnAt = now + 30000; // 死后 30 秒原地重生
-      this.broadcastMob(mob, { t: 'mobDie', id: mob.id });
+      this.broadcastMob(mob, { t: 'mobDie', id: mob.id, dmg });
       this.grantKill(attacker, mob); // 经验 + 任务计数（最后一击归属）
     } else {
       this.broadcastMob(mob, { t: 'mobHurt', id: mob.id, hp: mob.hp, dmg });
@@ -1056,7 +1070,7 @@ export class WorldDO {
         if (m && !m.dead) { this.broadcastMob(m, { t: 'mobDie', id: m.id }); this.mobs.delete(mid); }
       }
       boss.summonedIds = [];
-      this.broadcastBoss(boss, { t: 'bossDie', id: boss.def.id, respawnIn: Math.floor(boss.def.respawnMs / 1000) });
+      this.broadcastBoss(boss, { t: 'bossDie', id: boss.def.id, respawnIn: Math.floor(boss.def.respawnMs / 1000), dmg });
       for (const ws2 of this.sessions.keys()) {
         this.send(ws2, { t: 'bossDied', id: boss.def.id, respawnIn: Math.floor(boss.def.respawnMs / 1000) });
       }
