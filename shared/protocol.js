@@ -6,6 +6,7 @@
   const REACH = 6;                   // 挖放射程（与客户端一致）
   const REACH_SLACK = 2;             // 服务器校验余量（位置上报有滞后）
   const MAX_HSPEED = 9;              // 水平限速 m/s（步行 4.5 的 2 倍余量）
+  const MAX_HSPEED_SPRINT = 16;      // 冲刺限速 m/s（4.5×3=13.5 + 安全余量，level>=7 解锁）
   const MAX_VSPEED = 45;             // 垂直限速 m/s（最大坠落 40 + 余量）
   const MOVE_INTERVAL_MS = 100;      // 客户端位置上报周期
   const PERSIST_INTERVAL_MS = 30000; // 在线进度周期落盘
@@ -45,14 +46,16 @@
   }
 
   // 移动限速：返回服务器采纳的位置；超速/非法则 ok=false 并保留原位（拉回）
-  function clampMove(prev, msg, dtMs) {
+  // maxHSpeed 由调用方按玩家等级传入（sprint 解锁后用 MAX_HSPEED_SPRINT）
+  function clampMove(prev, msg, dtMs, maxHSpeed = MAX_HSPEED) {
     if (!msg || !isFinite(msg.x) || !isFinite(msg.y) || !isFinite(msg.z)) {
       return { ok: false, x: prev.x, y: prev.y, z: prev.z };
     }
-    const dt = Math.max(dtMs, 30) / 1000;
+    // 下限用 MOVE_INTERVAL_MS*0.8 而非 30ms：避免网络抖动导致两包到达过近时速度预算过小
+    const dt = Math.max(dtMs, MOVE_INTERVAL_MS * 0.8) / 1000;
     const dh = Math.hypot(msg.x - prev.x, msg.z - prev.z);
     const dv = Math.abs(msg.y - prev.y);
-    if (dh > MAX_HSPEED * dt || dv > MAX_VSPEED * dt) {
+    if (dh > maxHSpeed * dt || dv > MAX_VSPEED * dt) {
       return { ok: false, x: prev.x, y: prev.y, z: prev.z };
     }
     return { ok: true, x: msg.x, y: msg.y, z: msg.z };
@@ -120,7 +123,7 @@
 
   root.MyWorld = root.MyWorld || {};
   root.MyWorld.Protocol = {
-    INTEREST_CHUNKS, REACH, REACH_SLACK, MAX_HSPEED, MAX_VSPEED,
+    INTEREST_CHUNKS, REACH, REACH_SLACK, MAX_HSPEED, MAX_HSPEED_SPRINT, MAX_VSPEED,
     MOVE_INTERVAL_MS, PERSIST_INTERVAL_MS, VALID_BLOCK_IDS,
     MELEE_RANGE, MELEE_CD_MS, BOW_CD_MS, ARROW_SPEED, ARROW_GRAVITY, ARROW_LIFE_MS,
     INVULN_MS, REGEN_DELAY_MS, DEATH_RESPAWN_MS, MOB_TICK_MS, CAMP_ACTIVE_CHUNKS,

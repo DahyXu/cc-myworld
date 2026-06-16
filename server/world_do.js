@@ -274,7 +274,8 @@ export class WorldDO {
   onMove(ws, s, msg) {
     if (s.dead) return;
     const now = Date.now();
-    const r = P.clampMove(s, msg, now - s.lastMoveMs);
+    const maxHSpeed = s.level >= 7 ? P.MAX_HSPEED_SPRINT : P.MAX_HSPEED;
+    const r = P.clampMove(s, msg, now - s.lastMoveMs, maxHSpeed);
     // 拒绝时不推进 lastMoveMs：让 dt 从上次采纳累积，避免追赶包被连环误拒
     if (!r.ok) { this.send(ws, { t: 'teleport', x: s.x, y: s.y, z: s.z }); return; }
     s.lastMoveMs = now;
