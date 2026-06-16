@@ -25,6 +25,9 @@
   let sprintTimeLeft = 0;
   let flightTimeLeft = 0;
 
+  // 快捷键 → 技能 id 的绑定（可由玩家在技能书中修改）
+  const bindings = { Q: 'chargedStrike', G: 'sprint', R: 'shockwave', F: 'flight' };
+
   function getSkill(id) { return SKILL_TABLE.find(s => s.id === id); }
 
   // 根据等级重新计算解锁集合；返回本次新解锁技能名称列表
@@ -66,6 +69,21 @@
     return true;
   }
 
+  function getBoundSkill(key) { return bindings[key] || null; }
+  function getBoundKey(id) {
+    for (const [k, v] of Object.entries(bindings)) { if (v === id) return k; }
+    return null;
+  }
+  // 将 key（Q/G/R/F）绑定到指定主动技能；返回是否成功
+  function bind(key, id) {
+    if (!['Q', 'G', 'R', 'F'].includes(key)) return false;
+    const sk = getSkill(id);
+    if (!sk || sk.kind !== 'active' || !unlocked.has(id)) return false;
+    for (const k of Object.keys(bindings)) { if (bindings[k] === id) delete bindings[k]; }
+    bindings[key] = id;
+    return true;
+  }
+
   function isOnCooldown(id) { return (cooldowns[id] || 0) > 0; }
   function cooldownLeft(id) { return cooldowns[id] || 0; }
 
@@ -86,6 +104,7 @@
   root.MyWorld = root.MyWorld || {};
   root.MyWorld.Skills = {
     SKILL_TABLE, update, hasSkill, activate, consumeCharged,
+    getBoundSkill, getBoundKey, bind,
     isOnCooldown, cooldownLeft, tick,
     getFlightTimeLeft, forceEndFlight, isSprintActive,
   };

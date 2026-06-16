@@ -309,7 +309,10 @@
     background: rgba(255,255,255,0.05); border: 1px solid #444; border-radius: 6px;
     padding: 8px; font-size: 11px;
   }
-  .skillCard.unlocked { border-color: #5a5; background: rgba(80,160,80,0.13); }
+  .skillCard.unlocked { border-color: #5a5; background: rgba(80,160,80,0.13); cursor: pointer; }
+  .skillCard.unlocked:hover { border-color: #7d7; }
+  .skillCard.selected { border-color: #ffd24a !important; box-shadow: 0 0 6px #ffd24a88; }
+  .skillBookHint { font-size: 11px; color: #aaa; margin: 0 0 8px; text-align: center; }
   .skillCard .scName { font-size: 13px; font-weight: bold; margin-bottom: 3px; }
   .skillCard.locked .scName { color: #888; }
   .skillCard .scLv { color: #aaa; margin-bottom: 3px; font-size: 10px; }
@@ -446,22 +449,22 @@
 <div id="skillBar">
   <div class="skillSlot locked" id="skillSlotQ">
     <span class="skillKey">Q</span>
-    <span>蓄力</span>
+    <span class="skillName">蓄力</span>
     <div class="skillCdOverlay"></div>
   </div>
   <div class="skillSlot locked" id="skillSlotG">
     <span class="skillKey">G</span>
-    <span>冲刺</span>
+    <span class="skillName">冲刺</span>
     <div class="skillCdOverlay"></div>
   </div>
   <div class="skillSlot locked" id="skillSlotR">
     <span class="skillKey">R</span>
-    <span>冲击</span>
+    <span class="skillName">冲击</span>
     <div class="skillCdOverlay"></div>
   </div>
   <div class="skillSlot locked" id="skillSlotF">
     <span class="skillKey">F</span>
-    <span>飞行</span>
+    <span class="skillName">飞行</span>
     <div class="skillCdOverlay"></div>
   </div>
 </div>
@@ -474,6 +477,7 @@
   <div id="skillBookPanel">
     <button id="skillBookClose">×</button>
     <h2>技能书</h2>
+    <p class="skillBookHint">点击主动技能选中，再按 Q / G / R / F 绑定到对应快捷键</p>
     <div id="skillGrid"></div>
   </div>
 </div>

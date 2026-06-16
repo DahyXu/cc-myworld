@@ -143,20 +143,21 @@
       Hud.toggleQuestPanel();
       return;
     }
-    if (e.code === 'KeyF' && world && !selfDead && isLocked()) {
-      if (Skills.activate('flight')) { player.flying = true; }
+    // 技能书开启时：Q/G/R/F 将选中技能绑定到对应槽
+    if (Hud.isSkillBookOpen() && ['KeyQ','KeyG','KeyR','KeyF'].includes(e.code)) {
+      const sel = Hud.getSelectedSkill();
+      if (sel && Skills.bind(e.code.slice(3), sel)) {
+        Hud.updateSkillBar(Skills);
+        Hud.openSkillBook(currentLevel, Skills.SKILL_TABLE, Skills);
+      }
       return;
     }
-    if (e.code === 'KeyG' && world && !selfDead && isLocked()) {
-      Skills.activate('sprint');
-      return;
-    }
-    if (e.code === 'KeyQ' && world && !selfDead && isLocked()) {
-      Skills.activate('chargedStrike');
-      return;
-    }
-    if (e.code === 'KeyR' && world && !selfDead && isLocked()) {
-      if (Skills.activate('shockwave') && Net.connected()) Net.send({ t: 'aoeAttack' });
+    if (['KeyQ','KeyG','KeyR','KeyF'].includes(e.code) && world && !selfDead && isLocked()) {
+      const id = Skills.getBoundSkill(e.code.slice(3));
+      if (id && Skills.activate(id)) {
+        if (id === 'flight') player.flying = true;
+        if (id === 'shockwave' && Net.connected()) Net.send({ t: 'aoeAttack' });
+      }
       return;
     }
     if (e.code === 'KeyT' && world && !selfDead && isLocked() && Net.connected()) {
@@ -164,7 +165,7 @@
       return;
     }
     if (e.code === 'KeyK' && world) {
-      Hud.toggleSkillBook(currentLevel, Skills.SKILL_TABLE);
+      Hud.toggleSkillBook(currentLevel, Skills.SKILL_TABLE, Skills);
       if (Hud.isSkillBookOpen() && isLocked()) root.document.exitPointerLock();
       return;
     }

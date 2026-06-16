@@ -6,6 +6,7 @@
   let questCollapsed = false;
   let skillBookOpen = false;
   let toastTimer = null;
+  let selectedSkillId = null;
 
   function setHp(hp, max) {
     const fill = root.document.getElementById('hpFill');
@@ -95,26 +96,27 @@
   }
 
   function updateSkillBar(skillsState) {
-    const defs = [
-      { id: 'chargedStrike', slot: 'skillSlotQ' },
-      { id: 'sprint',        slot: 'skillSlotG' },
-      { id: 'shockwave',     slot: 'skillSlotR' },
-      { id: 'flight',        slot: 'skillSlotF' },
-    ];
-    for (const { id, slot } of defs) {
-      const el = root.document.getElementById(slot);
+    for (const key of ['Q', 'G', 'R', 'F']) {
+      const el = root.document.getElementById('skillSlot' + key);
       if (!el) continue;
+      const id = skillsState.getBoundSkill(key);
+      const nameEl = el.querySelector('.skillName');
+      if (!id) {
+        el.classList.add('locked');
+        if (nameEl) nameEl.textContent = '—';
+        const cd = el.querySelector('.skillCdOverlay');
+        if (cd) cd.style.display = 'none';
+        continue;
+      }
+      const sk = skillsState.SKILL_TABLE.find(s => s.id === id);
+      if (nameEl && sk) nameEl.textContent = sk.name.slice(0, 2);
       const has = skillsState.hasSkill(id);
       el.classList.toggle('locked', !has);
       const cd = el.querySelector('.skillCdOverlay');
       if (cd) {
         const left = skillsState.cooldownLeft(id);
-        if (has && left > 0) {
-          cd.style.display = 'flex';
-          cd.textContent = Math.ceil(left) + 's';
-        } else {
-          cd.style.display = 'none';
-        }
+        if (has && left > 0) { cd.style.display = 'flex'; cd.textContent = Math.ceil(left) + 's'; }
+        else cd.style.display = 'none';
       }
     }
   }
@@ -138,18 +140,30 @@
     toastTimer = root.setTimeout(() => { el.style.display = 'none'; }, 3000);
   }
 
-  function openSkillBook(level, skillTable) {
+  function getSelectedSkill() { return selectedSkillId; }
+
+  function openSkillBook(level, skillTable, skillsState) {
     const grid = root.document.getElementById('skillGrid');
     if (!grid) return;
     grid.innerHTML = '';
+    selectedSkillId = null;
     for (const sk of skillTable) {
+      const isUnlocked = level >= sk.unlockLevel;
       const card = root.document.createElement('div');
-      card.className = 'skillCard' + (level >= sk.unlockLevel ? ' unlocked' : ' locked');
+      card.className = 'skillCard' + (isUnlocked ? ' unlocked' : '');
+      const boundKey = (sk.kind === 'active' && skillsState) ? (skillsState.getBoundKey(sk.id) || '—') : null;
       let inner = '<div class="scName">' + sk.name + '</div>' +
         '<div class="scLv">Lv.' + sk.unlockLevel + ' 解锁</div>' +
         '<div class="scDesc">' + sk.description + '</div>';
-      if (sk.key) inner += '<span class="scKey">' + sk.key + '</span>';
+      if (sk.kind === 'active') inner += '<span class="scKey">' + (boundKey || '—') + '</span>';
       card.innerHTML = inner;
+      if (sk.kind === 'active' && isUnlocked) {
+        card.addEventListener('click', () => {
+          grid.querySelectorAll('.skillCard.selected').forEach(c => c.classList.remove('selected'));
+          card.classList.add('selected');
+          selectedSkillId = sk.id;
+        });
+      }
       grid.appendChild(card);
     }
     root.document.getElementById('skillBook').style.display = 'flex';
@@ -163,9 +177,9 @@
     root.dispatchEvent(new CustomEvent('skillBookClosed'));
   }
 
-  function toggleSkillBook(level, skillTable) {
+  function toggleSkillBook(level, skillTable, skillsState) {
     if (skillBookOpen) closeSkillBook();
-    else openSkillBook(level, skillTable);
+    else openSkillBook(level, skillTable, skillsState);
   }
 
   function isSkillBookOpen() { return skillBookOpen; }
@@ -213,5 +227,5 @@
 
   root.MyWorld = root.MyWorld || {};
   root.MyWorld.Hud = { setHp, flashRed, showDeath, floatDamage, update, setLevel, setXp, setQuest, levelUpFlash, toggleQuestPanel,
-    updateSkillBar, updateFlightBar, showSkillUnlock, openSkillBook, closeSkillBook, toggleSkillBook, isSkillBookOpen };
+    updateSkillBar, updateFlightBar, showSkillUnlock, openSkillBook, closeSkillBook, toggleSkillBook, isSkillBookOpen, getSelectedSkill };
 })(typeof self !== 'undefined' ? self : globalThis);
