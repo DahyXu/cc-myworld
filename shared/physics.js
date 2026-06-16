@@ -52,20 +52,22 @@
 
   // 一步物理：重力 + 三轴扫掠位移（水平速度由调用方在 step 前设置）
   function step(b, world, dt) {
-    b.vy -= GRAVITY * dt;
-    if (b.vy < -MAX_FALL) b.vy = -MAX_FALL;
+    if (!b.flying) {
+      b.vy -= GRAVITY * dt;
+      if (b.vy < -MAX_FALL) b.vy = -MAX_FALL;
+    }
     b.onGround = false;
     moveAxis(b, world, 'y', b.vy * dt);
     moveAxis(b, world, 'x', b.vx * dt);
     moveAxis(b, world, 'z', b.vz * dt);
+    if (b.flying && b.onGround) { b.flying = false; b.vy = 0; }
   }
 
   // 仅在地面时起跳；返回是否跳了
   function tryJump(b, v) {
-    if (!b.onGround) return false;
-    b.vy = v;
-    b.onGround = false;
-    return true;
+    if (b.onGround) { b.vy = v; b.onGround = false; return true; }
+    if (b.airJumps > 0) { b.vy = v; b.airJumps--; return true; }
+    return false;
   }
 
   // 前方脚边是否有实心方块挡路（怪物自动跳台阶用）：取移动方向上身体边缘外 1 格、脚踝高度处的方块
