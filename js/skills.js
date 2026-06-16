@@ -25,6 +25,8 @@
   let sprintTimeLeft = 0;
   let flightTimeLeft = 0;
 
+  function getSkill(id) { return SKILL_TABLE.find(s => s.id === id); }
+
   // 根据等级重新计算解锁集合；返回本次新解锁技能名称列表
   function update(level) {
     const prev = new Set(unlocked);
@@ -35,7 +37,7 @@
     const newlyUnlocked = [];
     for (const id of unlocked) {
       if (!prev.has(id)) {
-        const sk = SKILL_TABLE.find(s => s.id === id);
+        const sk = getSkill(id);
         if (sk) newlyUnlocked.push(sk.name);
       }
     }
@@ -48,7 +50,7 @@
   function activate(id) {
     if (!hasSkill(id)) return false;
     if ((cooldowns[id] || 0) > 0) return false;
-    const sk = SKILL_TABLE.find(s => s.id === id);
+    const sk = getSkill(id);
     if (!sk || sk.kind !== 'active') return false;
     cooldowns[id] = sk.cooldown;
     if (id === 'chargedStrike') chargedReady = true;
@@ -69,8 +71,9 @@
 
   // 每帧减少冷却与持续计时
   function tick(dt) {
-    for (const id in cooldowns) {
+    for (const id of Object.keys(cooldowns)) {
       if (cooldowns[id] > 0) cooldowns[id] = Math.max(0, cooldowns[id] - dt);
+      if (cooldowns[id] <= 0) delete cooldowns[id];
     }
     if (sprintTimeLeft > 0) sprintTimeLeft = Math.max(0, sprintTimeLeft - dt);
     if (flightTimeLeft > 0) flightTimeLeft = Math.max(0, flightTimeLeft - dt);
