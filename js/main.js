@@ -7,7 +7,7 @@
   const Blocks = MW.Blocks, World = MW.World, Mesher = MW.Mesher;
   const Player = MW.Player, Raycast = MW.Raycast, UI = MW.UI;
   const Net = MW.Net, Entities = MW.Entities, P = MW.Protocol;
-  const Combat = MW.Combat, Hud = MW.Hud, QuestsDef = MW.QuestsDef;
+  const Combat = MW.Combat, Hud = MW.Hud, QuestsDef = MW.QuestsDef, Skills = MW.Skills;
   const Inventory = MW.Inventory;
   const Minimap = MW.Minimap;
   const Touch = isMobile ? MW.Touch : null;
@@ -54,6 +54,7 @@
   let maxHpCache = 20;
   let respawnPending = false;
   let currentQuest = null;
+  let currentLevel = 1;
   let pendingInviteFrom = null;
   let bannerTimer = null;
 
@@ -124,8 +125,8 @@
   scene.add(hl);
 
   // --- 输入 ---
-  const input = { forward: false, back: false, left: false, right: false, jump: false };
-  const KEYMAP = { KeyW: 'forward', KeyS: 'back', KeyA: 'left', KeyD: 'right', Space: 'jump' };
+  const input = { forward: false, back: false, left: false, right: false, jump: false, down: false };
+  const KEYMAP = { KeyW: 'forward', KeyS: 'back', KeyA: 'left', KeyD: 'right', Space: 'jump', ShiftLeft: 'down', ShiftRight: 'down' };
   let hotbarIndex = 0;
   window.addEventListener('keydown', (e) => {
     if (KEYMAP[e.code]) { input[KEYMAP[e.code]] = true; if (e.code === 'Space') e.preventDefault(); }
@@ -140,6 +141,27 @@
     }
     if (e.code === 'KeyJ' && world) {
       Hud.toggleQuestPanel();
+      return;
+    }
+    if (e.code === 'KeyF' && world && !selfDead && isLocked()) {
+      if (Skills.activate('flight')) { player.flying = true; }
+      return;
+    }
+    if (e.code === 'KeyG' && world && !selfDead && isLocked()) {
+      Skills.activate('sprint');
+      return;
+    }
+    if (e.code === 'KeyQ' && world && !selfDead && isLocked()) {
+      Skills.activate('chargedStrike');
+      return;
+    }
+    if (e.code === 'KeyR' && world && !selfDead && isLocked()) {
+      if (Skills.activate('shockwave') && Net.connected()) Net.send({ t: 'aoeAttack' });
+      return;
+    }
+    if (e.code === 'KeyK' && world) {
+      Hud.toggleSkillBook(currentLevel, Skills.SKILL_TABLE);
+      if (Hud.isSkillBookOpen() && isLocked()) root.document.exitPointerLock();
       return;
     }
     if (e.code === 'KeyE' && world && !selfDead && isLocked()) {
@@ -199,6 +221,7 @@
     if (pendingNpc) { pendingNpc = false; UI.setOverlayMode('npc'); return; }
     if (Inventory && Inventory.isPanelOpen()) return;
     if (Minimap && Minimap.isOpen()) return;
+    if (Hud.isSkillBookOpen()) return;
     if (!world) return;
     if (UI.getOverlayMode() === 'replaced') { UI.showOverlay(true); return; } // 被顶替：提示不被覆盖
     UI.setOverlayMode(Net.connected() ? 'start' : 'connecting'); // 断线触发的解锁：保持「连接中」遮罩
@@ -223,7 +246,8 @@
     if (!world || selfDead) return;
     const d0 = viewDir();
     const eye = { x: player.x, y: player.y + Player.EYE, z: player.z };
-    const consumed = Combat.onAttackClick(hotbarIndex, eye, d0, [...Entities.mobList(), ...Entities.bossAABBList()], Entities.playerAABBList(), Net);
+    const charged = Skills.consumeCharged();
+    const consumed = Combat.onAttackClick(hotbarIndex, eye, d0, [...Entities.mobList(), ...Entities.bossAABBList()], Entities.playerAABBList(), Net, charged);
     if (consumed === 'shoot') { Entities.spawnLocalArrow(eye.x, eye.y, eye.z, d0.x, d0.y, d0.z); return; }
     if (consumed) return;
     const r = Raycast.cast(world, player.x, player.y + Player.EYE, player.z, d0.x, d0.y, d0.z, REACH);
@@ -306,6 +330,9 @@
     // NPC 长老：固定坐标 + 本地地表高度
     Entities.setNpc(QuestsDef.NPC_X, world.terrainHeight(Math.floor(QuestsDef.NPC_X), Math.floor(QuestsDef.NPC_Z)) + 1, QuestsDef.NPC_Z);
     Hud.setXp(msg.xp, msg.level, msg.xpNext);
+    currentLevel = msg.level;
+    Skills.update(msg.level);
+    Hud.updateSkillBar(Skills);
     currentQuest = msg.quest;
     Hud.setQuest(currentQuest);
     updateNpcMarker();
@@ -323,6 +350,9 @@
     maxHpCache = msg.maxHp;
     Hud.setHp(msg.hp, msg.maxHp);
     Hud.setXp(msg.xp, msg.level, msg.xpNext);
+    currentLevel = msg.level;
+    Skills.update(msg.level);
+    Hud.updateSkillBar(Skills);
     currentQuest = msg.quest;
     Hud.setQuest(currentQuest);
     updateNpcMarker();
@@ -436,13 +466,21 @@
     if (selfDead && m.hp > 0) { selfDead = false; Hud.showDeath(false); }
   });
   Net.on('playerHurt', (m) => { Hud.setHp(m.hp, maxHpCache); Hud.flashRed(); });
-  Net.on('playerDie', () => { selfDead = true; Hud.showDeath(true); });
+  Net.on('playerDie', () => {
+    selfDead = true; Hud.showDeath(true);
+    if (player) { player.flying = false; player.vy = 0; }
+    Skills.forceEndFlight();
+  });
   Net.on('xpGain', (m) => { Hud.setXp(m.xp, m.level, m.xpNext); });
   Net.on('levelUp', (m) => {
     maxHpCache = m.maxHp;
+    currentLevel = m.level;
     Hud.setHp(m.hp, m.maxHp);
     Hud.setLevel(m.level);
     Hud.levelUpFlash();
+    const newSkills = Skills.update(m.level);
+    for (const name of newSkills) Hud.showSkillUnlock(name);
+    Hud.updateSkillBar(Skills);
   });
   Net.on('questState', (m) => { currentQuest = m.quest; Hud.setQuest(currentQuest); updateNpcMarker(); if (UI.getOverlayMode() === 'npc') openNpcDialog(); });
   Net.on('pLevelUp', (m) => { Hud.floatDamage(m.x, m.y + 2.3, m.z, '⬆ 升级!', '#ffe066'); });
@@ -481,6 +519,9 @@
   Net.connect();
 
   root.addEventListener('invClosed', () => {
+    if (world && !isLocked() && !selfDead) UI.setOverlayMode('start');
+  });
+  root.addEventListener('skillBookClosed', () => {
     if (world && !isLocked() && !selfDead) UI.setOverlayMode('start');
   });
   root.addEventListener('mapClosed', () => {
@@ -557,7 +598,7 @@
         }
         Touch.setNpcVisible(nearNpc());
       }
-      if (isActive() && !selfDead) Player.update(player, world, dt, input);
+      if (isActive() && !selfDead) Player.update(player, world, dt, input, Skills);
       // 掉出世界：请求服务器传送（等待期间悬停，避免反复触发）
       if (player.y < -10) {
         if (!respawnPending && Net.connected()) {
@@ -566,6 +607,13 @@
         }
         if (player.y < -30) { player.y = -30; player.vy = 0; }
       }
+      Skills.tick(dt);
+      player.sprintActive = Skills.isSprintActive();
+      const ftl = Skills.getFlightTimeLeft();
+      if (player.flying && ftl <= 0) { player.flying = false; player.vy = 0; }
+      Hud.updateFlightBar(ftl, 30);
+      if (player.onGround) player.airJumps = Skills.hasSkill('doubleJump') ? 1 : 0;
+      Hud.updateSkillBar(Skills);
       updateChunks();
       camera.position.set(player.x, player.y + Player.EYE, player.z);
       camera.rotation.set(player.pitch, player.yaw, 0);
