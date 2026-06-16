@@ -5,7 +5,9 @@
   const LEVEL_CAP = 20;
 
   // HP 上限 / 剑伤害 / 弓伤害：随等级线性成长
-  function maxHp(level) { return 20 + 5 * (level - 1); }
+  function maxHp(level) {
+    return 20 + 5 * (level - 1) + (level >= 2 ? 25 : 0) + (level >= 10 ? 50 : 0);
+  }
   function swordDamage(level) { return 3 + 1 * (level - 1); }
   function bowDamage(level) { return Math.floor(2 + 0.8 * (level - 1)); }
 
