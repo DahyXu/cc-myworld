@@ -161,6 +161,7 @@ export class WorldDO {
     else if (msg.t === 'shoot') this.onShoot(ws, s, msg);
     else if (msg.t === 'pvpAttack') { if (P.validPvpAttack(msg)) this.onPvpAttack(ws, s, msg); }
     else if (msg.t === 'respawn') this.onRespawn(ws, s);
+    else if (msg.t === 'recall')  this.onRecall(ws, s);
     else if (msg.t === 'questAccept') { if (P.validQuestMsg(msg)) this.onQuestAccept(ws, s); }
     else if (msg.t === 'questTurnIn') { if (P.validQuestMsg(msg)) this.onQuestTurnIn(ws, s); }
     else if (msg.t === 'inv_arrange') { if (P.validInvArrange(msg)) this.onInvArrange(ws, s, msg); }
@@ -480,6 +481,16 @@ export class WorldDO {
     s.x = SPAWN_X; s.z = SPAWN_Z;
     s.y = this.world.terrainHeight(8, 8) + 1;
     s.lastMoveMs = Date.now(); // 位置已权威重置，限速时钟同步归零，避免长闲置攒出超大位移预算
+    this.send(ws, { t: 'teleport', x: s.x, y: s.y, z: s.z });
+    this.syncVisibility(ws, s);
+  }
+
+  // --- 主动回城（T 键）：仅限存活状态 ---
+  onRecall(ws, s) {
+    if (s.dead) return;
+    s.x = SPAWN_X; s.z = SPAWN_Z;
+    s.y = this.world.terrainHeight(8, 8) + 1;
+    s.lastMoveMs = Date.now();
     this.send(ws, { t: 'teleport', x: s.x, y: s.y, z: s.z });
     this.syncVisibility(ws, s);
   }

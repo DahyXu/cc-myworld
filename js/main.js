@@ -159,6 +159,10 @@
       if (Skills.activate('shockwave') && Net.connected()) Net.send({ t: 'aoeAttack' });
       return;
     }
+    if (e.code === 'KeyT' && world && !selfDead && isLocked() && Net.connected()) {
+      Net.send({ t: 'recall' });
+      return;
+    }
     if (e.code === 'KeyK' && world) {
       Hud.toggleSkillBook(currentLevel, Skills.SKILL_TABLE);
       if (Hud.isSkillBookOpen() && isLocked()) root.document.exitPointerLock();
