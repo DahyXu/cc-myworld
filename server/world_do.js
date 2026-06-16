@@ -92,7 +92,7 @@ export class WorldDO {
         mainIndex: row && isFinite(row.chain_index) ? row.chain_index : 0,
         hp: row && isFinite(row.hp) && row.hp > 0 ? Math.min(row.hp, mhp) : mhp, maxHp: mhp,
         dead: false, deadUntil: 0, invulnUntil: 0, lastHurtAt: 0, nextRegenAt: 0, atkReadyAt: 0, bowReadyAt: 0,
-        undyingUsedAt: 0, nextSkillRegenAt: 0,
+        undyingUsedAt: 0, nextSkillRegenAt: 0, aoeReadyAt: 0,
       };
       s.coins = row && isFinite(row.coins) ? row.coins : 0;
       s.inv = new Array(40).fill(null);
@@ -211,7 +211,7 @@ export class WorldDO {
       mainIndex: row && isFinite(row.chain_index) ? row.chain_index : 0,
       coins: row && isFinite(row.coins) ? row.coins : 0,
       hp, maxHp, dead: false, deadUntil: 0, invulnUntil: 0, lastHurtAt: 0, nextRegenAt: 0, atkReadyAt: 0, bowReadyAt: 0,
-      teamId: null, undyingUsedAt: 0, nextSkillRegenAt: 0 };
+      teamId: null, undyingUsedAt: 0, nextSkillRegenAt: 0, aoeReadyAt: 0 };
     this.sessions.set(ws, s);
     // 旧版 'c:...' quest id 在新版 parse 中返回 null，清除避免卡死接任务入口
     if (s.questId && !QuestsDef.parse(s.questId)) {
@@ -1337,6 +1337,8 @@ export class WorldDO {
   onAoeAttack(ws, s) {
     if (s.dead || s.level < 12) return;
     const now = Date.now();
+    if (now < (s.aoeReadyAt || 0)) return;
+    s.aoeReadyAt = now + 25000;
     const { x: ex, y: ey, z: ez } = s;
     for (const mob of this.mobs.values()) {
       if (mob.dead) continue;
