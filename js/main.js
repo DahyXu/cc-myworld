@@ -223,7 +223,7 @@
     if (!world || selfDead) return;
     const d0 = viewDir();
     const eye = { x: player.x, y: player.y + Player.EYE, z: player.z };
-    const consumed = Combat.onAttackClick(hotbarIndex, eye, d0, Entities.mobList(), Entities.playerAABBList(), Net);
+    const consumed = Combat.onAttackClick(hotbarIndex, eye, d0, [...Entities.mobList(), ...Entities.bossAABBList()], Entities.playerAABBList(), Net);
     if (consumed === 'shoot') { Entities.spawnLocalArrow(eye.x, eye.y, eye.z, d0.x, d0.y, d0.z); return; }
     if (consumed) return;
     const r = Raycast.cast(world, player.x, player.y + Player.EYE, player.z, d0.x, d0.y, d0.z, REACH);

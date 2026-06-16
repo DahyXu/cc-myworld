@@ -428,6 +428,17 @@
     return out;
   }
 
+  // combat.pickMob 用：存活 boss 的 AABB 列表（含 x/y/z/half/height）
+  function bossAABBList() {
+    const out = [];
+    for (const [id, e] of bosses) {
+      if (e.dieT > 0) continue;
+      out.push({ id, x: e.group.position.x, y: e.group.position.y, z: e.group.position.z,
+        half: e.half, height: e.height });
+    }
+    return out;
+  }
+
   function clear() {
     for (const pid of Array.from(players.keys())) removePlayer(pid);
     for (const id of Array.from(mobs.keys())) despawnMob(id);
@@ -509,7 +520,7 @@
     upsertMob, moveMob, hurtMob, dieMob, despawnMob, mobList,
     spawnLocalArrow, remoteArrow, dieArrow, setNpc, setNpcMarker,
     upsertBoss, moveBoss, hurtBossEntity, dieBossEntity, showBossCountdown, removeBossTimer, playerList, bossList,
-    playerAABBList, setTeamPids,
+    playerAABBList, setTeamPids, bossAABBList,
     bossPos: (id) => { const e = bosses.get(id); return e ? { x: e.group.position.x, y: e.group.position.y, z: e.group.position.z } : null; },
   };
 })(typeof self !== 'undefined' ? self : globalThis);
